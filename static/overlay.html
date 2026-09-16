@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Futebol Live · Overlay</title><link rel="stylesheet" href="/static/overlay.css"></head>
+<body><main id="stage">
+<div id="backdrop"></div><div id="shade"></div>
+<div class="broadcast-brand"><span class="brand-mark">F<span>∕</span>L</span><span id="channelName">FUTEBOL LIVE</span></div>
+<section class="scoreboard" id="scoreboard">
+ <header class="competition-bar"><span class="competition-dot"></span><span id="competition">TRANSMISSÃO AO VIVO</span><span class="match-badge" id="matchBadge">PRÉ-JOGO</span></header>
+ <div class="scoreline">
+  <div class="team home"><div class="crest"><img id="homeLogo" alt=""><span id="homeFallback">MAN</span></div><div class="team-text"><span class="team-role">MANDANTE</span><h1 id="homeName">Mandante</h1></div></div>
+  <div class="score-digits"><span id="homeScore">0</span><span class="score-divider">:</span><span id="awayScore">0</span></div>
+  <div class="team away"><div class="team-text"><span class="team-role">VISITANTE</span><h1 id="awayName">Visitante</h1></div><div class="crest"><img id="awayLogo" alt=""><span id="awayFallback">VIS</span></div></div>
+ </div>
+ <footer class="score-footer"><span class="clock" id="clock">0′</span><span id="matchStatus">PRÉ-JOGO</span><span class="venue" id="venue"></span></footer>
+</section>
+<section class="context-band" id="contextBand"></section>
+<div class="bottom" id="matchPanels">
+ <section class="panel stats-panel" id="statsPanel"><header><span class="eyebrow">A PARTIDA EM NÚMEROS</span><h2>Estatísticas</h2></header><div class="stat-team-labels"><span id="statsHome">MAN</span><span id="statsAway">VIS</span></div><div id="stats"></div></section>
+ <section class="panel match-lineups" id="matchLineups"><header><span class="eyebrow">OS NOMES DA PARTIDA</span><h2>Escalações · titulares</h2></header><div class="lineup-columns" id="matchLineupRows"></div></section>
+ <div class="right-column"><section class="panel pitch-panel" id="pitchPanel" hidden><header><span class="eyebrow" id="pitchEyebrow">ÚLTIMA POSIÇÃO INFORMADA</span><h2>Lance no campo</h2></header><div class="pitch"><div class="center-circle"></div><div class="box left"></div><div class="box right"></div><div class="ball" id="ball"></div></div><p id="zone">Posição não disponível.</p></section>
+ <section class="panel events-panel" id="eventsPanel"><header><span class="eyebrow">ACOMPANHE O JOGO</span><h2>Últimos lances</h2></header><div id="events"><p class="empty">Aguardando eventos da partida.</p></div><div class="bookings" id="bookings"></div></section>
+</div></div>
+<section id="lineupsPanel" class="lineups-overlay" hidden><div class="lineup-heading"><span class="eyebrow">QUEM VAI A CAMPO</span><h2>Escalações</h2><span id="lineupGroup">Titulares</span></div><div class="lineup-columns" id="overlayLineups"></div></section>
+<section id="tablePanel" class="standings-overlay panel" hidden><header class="standings-heading"><div><span class="eyebrow">CLASSIFICAÇÃO DO CAMPEONATO</span><h2 id="overlayTableTitle">Tabela completa</h2></div><span id="tablePageIndicator"></span></header><div id="overlayTableColumns" class="standings-columns"></div><footer class="table-legend">PTS pontos · J jogos · V vitórias · E empates · D derrotas · SG saldo de gols · totais no campeonato<br><span id="tableSourceNote">Classificação informada pela fonte; pode não incluir a partida em andamento.</span></footer></section>
+</main><script src="/static/shared.js?v=20260916-geobs1"></script><script src="/static/overlay.js?v=20260916-geobs1"></script></body></html>

@@ -1,0 +1,2 @@
+piper-tts==1.8.0
+kokoro-onnx==0.6.1
