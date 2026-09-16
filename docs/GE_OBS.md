@@ -27,7 +27,7 @@ Adicione a mesma fonte existente às demais cenas. A permissão de áudio é exc
 ## Preferências
 
 - **Sem comentários por intervalo:** os lances continuam ativos; comentários estatísticos periódicos ficam desligados. **Panorama agora** continua disponível.
-- **Ler automaticamente os titulares:** opcional e inicialmente desligado. **Ler escalações agora** solicita a leitura; **Pular escalações** cancela o bloco atual e o restante da escalação.
+- **Ler automaticamente os titulares:** opcional e inicialmente desligado. **Ler escalações agora** solicita a leitura mesmo com essa opção desmarcada e mesmo em partidas encerradas. A saída de narração precisa estar ativada e sem pausa. **Pular escalações** cancela o bloco atual e o restante da escalação.
 - **Pedir like e inscrição:** ativável, com intervalo mínimo de 5, 10 ou 15 minutos. Só entra quando a fila está livre e não houve lance nos últimos 15 segundos. Eventos do jogo interrompem o lembrete.
 - **Vou comentar no microfone:** pausa a voz automática. Não controla seu microfone do OBS.
 
