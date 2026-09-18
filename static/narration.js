@@ -22,15 +22,19 @@ const MatchEventsCompat = typeof MatchEvents !== 'undefined' ? MatchEvents : {
 
 class MatchNarrator {
  constructor({synth=window.speechSynthesis,Utterance=window.SpeechSynthesisUtterance,onChange=()=>{},compose=null}={}) {
-  Object.assign(this,{synth,Utterance,onChange,enabled:false,previewing:false,paused:false,queue:[],utterance:null,seen:new Set(),scoreTimer:null,status:'Narração desligada.',lastText:'',voice:null,rate:1,volume:1,style:'events',commentaryInterval:90,lastCommentAt:0});
+  Object.assign(this,{synth,Utterance,onChange,enabled:false,previewing:false,paused:false,queue:[],utterance:null,seen:new Set(),scoreTimer:null,status:'Narração desligada.',lastText:'',voice:null,rate:1,volume:1,style:'events',commentaryInterval:90,lastCommentAt:0,customComments:[],sponsorReads:[],playerFocus:'',customIndex:0,sponsorIndex:0});
   this.radio=new RadioCommentary();
   this.compose=compose;this.composing=null;this.finishAfterDrain=false;
   this.lineupQueue=[];this.lineupsSeen=new Set();
   this.analysisCycle=0;
  }
- configure({voice,commentaryVoice=null,rate=1,volume=1,commentaryRate=null,commentaryVolume=null,pronunciations={},stageScripts=true,style='events',commentaryInterval=90,delivery='natural',curiosities=false,announceLineups=false,engagement=false,engagementInterval=600}) {
+ configure({voice,commentaryVoice=null,rate=1,volume=1,commentaryRate=null,commentaryVolume=null,pronunciations={},stageScripts=true,style='events',commentaryInterval=90,delivery='natural',curiosities=false,announceLineups=false,engagement=false,engagementInterval=600,customComments=[],sponsorReads=[],commentLibrary=[],playerFocus=''}) {
   this.voice=voice;
   this.commentaryVoice=commentaryVoice||voice;this.curiosities=curiosities;
+  this.customComments=Array.isArray(customComments)?customComments.filter(Boolean).slice(0,12):[];
+  this.sponsorReads=Array.isArray(sponsorReads)?sponsorReads.filter(Boolean).slice(0,8):[];
+  this.commentLibrary=Array.isArray(commentLibrary)?commentLibrary.filter(item=>item&&typeof item.text==='string'&&item.text.trim()).slice(0,50):[];
+  this.playerFocus=String(playerFocus||'');
   if(this.announceLineups&&!announceLineups)this.lineupQueue=this.lineupQueue.filter(item=>item.manualLineup);
   this.announceLineups=announceLineups;
   this.rate=Math.min(1.4,Math.max(.7,Number(rate)||1));
@@ -113,10 +117,11 @@ class MatchNarrator {
  }
  allowGEJump() {
   if(!this.currentItem||this.currentItem.kind!=='analysis')return;
-  if(this.currentItem.panorama&&this.queue.some(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey)){
-   this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
-   this.queue.unshift(this.queue.splice(this.queue.findIndex(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey),1)[0]);
-  }
+  const nextEvent=this.queue.findIndex(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey||['goal','card','substitution','review','cancelled','correction'].includes(item.kind));
+  if(nextEvent<0)return;
+  this.sortQueue();
+  const item=this.queue.splice(nextEvent,1)[0];
+  if(item)this.queue.unshift(item);
  }
  disconnect() {
   if(!this.enabled)return;
@@ -195,6 +200,14 @@ class MatchNarrator {
   if(item.lineup||item.script||item.panorama||item.engagement||item.kind==='analysis')return 10;
   return 50;
  }
+ sortQueue(){
+  this.queue.sort((a,b)=>{
+   const aRealtime=Boolean(a.eventKey||a.editorial||['goal','card','substitution','review','cancelled','correction'].includes(a.kind));
+   const bRealtime=Boolean(b.eventKey||b.editorial||['goal','card','substitution','review','cancelled','correction'].includes(b.kind));
+   if(aRealtime!==bRealtime)return Number(bRealtime)-Number(aRealtime);
+   return this.queuePriority(b)-this.queuePriority(a)||a.created-b.created;
+  });
+ }
  enqueue(text,kind='event',meta={}) {
   const parts=[];let rest=String(text);
   while(meta.editorial&&rest.length>900){const split=rest.lastIndexOf(' ',850);const at=split>400?split:850;parts.push(rest.slice(0,at));rest=rest.slice(at).trimStart();}
@@ -204,14 +217,14 @@ class MatchNarrator {
   const items=parts.map(text=>({text,created:Date.now(),kind,...meta}));
   const front = kind==='goal' || meta.urgent || Boolean(meta.editorial) || ['cancelled','correction','review'].includes(kind);
   if(front)this.queue.unshift(...items);else this.queue.push(...items);
-  this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
+  this.sortQueue();
   // Discard an old backlog instead of speaking minutes behind the feed.
   while(this.queue.length>8){const drop=this.queue.findIndex(next=>this.queuePriority(next)<100);this.queue.splice(drop<0?this.queue.length-1:drop,1);}this.pump();this.notify();
  }
  pump() {
   if(this.utterance||this.composing||this.paused||(!this.enabled&&!this.previewing))return;
   this.queue=this.queue.filter(item=>Date.now()-item.created<45000);
-  this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
+  this.sortQueue();
   const item=this.queue.shift()||(!this.scoreTimer?this.lineupQueue.shift():null);
   if(!item){if(this.finishAfterDrain){this.stop('Partida encerrada. Fila e áudios liberados.');return;}this.previewing=false;this.notify(this.enabled?'Aguardando novos lances.':'Teste de voz concluído.');return;}
   if(this.compose&&this.enabled&&!this.previewing&&!item.lineup&&!item.script){
@@ -269,6 +282,49 @@ class MatchNarrator {
   const positions={GK:'goleiro',G:'goleiro',D:'defensor',DF:'defensor',DC:'zagueiro',CB:'zagueiro',CD:'zagueiro',CDL:'zagueiro pela esquerda',CDR:'zagueiro pela direita',LB:'lateral esquerdo',RB:'lateral direito',DL:'lateral esquerdo',DR:'lateral direito',LWB:'ala esquerdo',RWB:'ala direito',M:'meio-campista',MF:'meio-campista',CM:'meio-campista central',MC:'meio-campista central',DMC:'volante',DM:'volante',DMR:'volante pela direita',DML:'volante pela esquerda',AMC:'meia ofensivo',AM:'meia ofensivo',AMR:'meia pela direita',AML:'meia pela esquerda',LM:'meia pela esquerda',RM:'meia pela direita',F:'atacante',FW:'atacante',ST:'atacante',CF:'centroavante',LW:'ponta esquerda',RW:'ponta direita',SUB:'reserva',Goalkeeper:'goleiro',Defender:'defensor',Midfielder:'meio-campista',Attacker:'atacante'};
   return positions[value]||positions[String(value||'').replace(/[-_]/g,'')]||'posição não informada';
  }
+ featuredPlayer(s){
+  const raw=this.playerFocus||'';
+  if(!raw||!s?.lineups)return null;
+  const [side, ...rest]=String(raw).split(':');
+  const requested=rest.join(':').trim();
+  const pool=[...(s.lineups?.[side]?.starters||[]),...(s.lineups?.[side]?.bench||[])];
+  if(!pool.length)return null;
+  if(requested){return pool.find(p=>p.name===requested)||pool.find(p=>p.name?.toLowerCase()===requested.toLowerCase())||null;}
+  return pool[0]||null;
+ }
+ customComment(s){
+  const library=this.commentLibrary||[];
+  const focused=this.featuredPlayer(s);
+  const picks=library.filter(entry=>{
+   const team=String(entry.team||'').trim();
+   const player=String(entry.player||'').trim();
+   if(!team&&!player)return true;
+   if(focused){
+    const samePlayer=player && focused.name && focused.name.toLowerCase()===player.toLowerCase();
+    const sameTeam=team && [s.home?.name,s.away?.name].some(name=>name && name.toLowerCase()===team.toLowerCase());
+    if(samePlayer||sameTeam)return true;
+   }
+   return !player && !!team && [s.home?.name,s.away?.name].some(name=>name && name.toLowerCase()===team.toLowerCase());
+  });
+  if(picks.length){
+   const pick=picks[Math.floor(Math.random()*picks.length)];
+   if(pick && pick.text){return pick.text;}
+  }
+  if(!this.customComments.length)return '';
+  const player=focused;
+  const base=this.customComments[this.customIndex % this.customComments.length];
+  this.customIndex=(this.customIndex+1)%Math.max(this.customComments.length,1);
+  if(!player)return base;
+  const role=this.position(player.position)||'no time';
+  const number=player.number?` camisa ${player.number}`:'';
+  return `Atenção para ${player.name}${number}, ${role}. ${base}`;
+ }
+ sponsorRead(s){
+  if(!this.sponsorReads.length)return '';
+  const message=this.sponsorReads[this.sponsorIndex % this.sponsorReads.length];
+  this.sponsorIndex=(this.sponsorIndex+1)%Math.max(this.sponsorReads.length,1);
+  return message;
+ }
  scheduleLineups(s,force=false){
   if(!this.enabled||this.paused||(s.phase==='post'&&!force)||(!this.announceLineups&&!force))return;
   for(const side of ['home','away']){
@@ -314,7 +370,13 @@ class MatchNarrator {
   let comment='',source=null;
   const cycle = this.analysisCycle % 10;
   this.analysisCycle += 1;
-  if(this.curiosities){
+  if((this.commentLibrary.length || this.customComments.length) && (cycle===0 || cycle===4)){
+   comment=this.customComment(s);source={name:'comentário do usuário'};
+  }
+  if(!comment && this.sponsorReads.length && cycle===5){
+   comment=this.sponsorRead(s);source={name:'patrocinador'};
+  }
+  if(this.curiosities && !comment){
    this.contextSeen??=new Map();
    const facts=this.contextCandidates(s).filter(f=>!this.contextSeen.has(f.id)||Date.now()-this.contextSeen.get(f.id)>=600000);
    if(facts.length){

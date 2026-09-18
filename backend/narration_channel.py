@@ -30,6 +30,10 @@ class NarrationSettings(BaseModel):
     announceLineups: bool = False
     engagement: bool = True
     engagementInterval: Literal[300, 600, 900] = 600
+    customComments: list[str] = Field(default_factory=list)
+    sponsorReads: list[str] = Field(default_factory=list)
+    playerFocus: str = Field(default="", max_length=80)
+    commentLibrary: list[dict[str, str]] = Field(default_factory=list)
 
     @field_validator('pronunciations')
     @classmethod
@@ -43,6 +47,51 @@ class NarrationSettings(BaseModel):
                 raise ValueError('Nome repetido no dicionário.')
             clean[name] = spoken
         return clean
+
+    @field_validator('customComments', 'sponsorReads')
+    @classmethod
+    def validate_comment_lists(cls, value, info):
+        cleaned = []
+        seen = set()
+        for item in value or []:
+            text = str(item).strip()
+            if not text or len(text) > 300 or any(ch in text for ch in '\n\r\t'):
+                continue
+            key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(text)
+        if info.field_name == 'customComments' and len(cleaned) > 12:
+            cleaned = cleaned[:12]
+        if info.field_name == 'sponsorReads' and len(cleaned) > 8:
+            cleaned = cleaned[:8]
+        return cleaned
+
+    @field_validator('playerFocus')
+    @classmethod
+    def validate_player_focus(cls, value):
+        return str(value).strip()[:80]
+
+    @field_validator('commentLibrary')
+    @classmethod
+    def validate_comment_library(cls, value):
+        cleaned = []
+        seen = set()
+        for item in value or []:
+            if not isinstance(item, dict):
+                continue
+            team = str(item.get('team', '')).strip()[:80]
+            player = str(item.get('player', '')).strip()[:80]
+            text = str(item.get('text', '')).strip()
+            if not text or len(text) > 350 or any(ch in text for ch in '\n\r\t'):
+                continue
+            key = (team.casefold(), player.casefold(), text.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append({'team': team, 'player': player, 'text': text})
+        return cleaned[:50]
 
 
 class QueueItem(BaseModel):

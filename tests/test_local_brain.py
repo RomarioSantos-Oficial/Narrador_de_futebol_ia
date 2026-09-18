@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
 from backend.local_brain import BrainRequest, LocalBrain, assemble
+from backend.narration_channel import NarrationSettings
 
 
 class BrainTests(unittest.TestCase):
@@ -26,6 +27,21 @@ class BrainTests(unittest.TestCase):
     def test_event_cannot_be_replaced_by_an_optional_fact(self):
         payload = BrainRequest(text='Cartão vermelho para João.', kind='card', choices=['Inventado.'])
         self.assertEqual(assemble(payload, {'opening': '', 'facts': [0]}), payload.text)
+
+    def test_custom_notes_and_sponsor_reads_are_supported(self):
+        settings = NarrationSettings(customComments=['Atenção ao camisa 10.'], sponsorReads=['Patrocínio do canal.'])
+        self.assertEqual(settings.customComments, ['Atenção ao camisa 10.'])
+        self.assertEqual(settings.sponsorReads, ['Patrocínio do canal.'])
+
+    def test_saved_team_and_player_notes_are_reused_across_matches(self):
+        settings = NarrationSettings(commentLibrary=[{
+            'team': 'Chelsea',
+            'player': 'Pedro Neto',
+            'text': 'Pedro Neto tem conforto no lado direito.'
+        }])
+        self.assertEqual(settings.commentLibrary[0]['team'], 'Chelsea')
+        self.assertEqual(settings.commentLibrary[0]['player'], 'Pedro Neto')
+        self.assertIn('Pedro Neto', settings.commentLibrary[0]['text'])
 
     def test_unavailable_brain_preserves_baseline_and_validation(self):
         with tempfile.TemporaryDirectory() as folder:

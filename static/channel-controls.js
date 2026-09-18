@@ -5,13 +5,17 @@ let settingsReady=false,saveTimer,saveChain=Promise.resolve();
 const narrationInputs={narrationVoice:'voice',commentaryVoice:'commentaryVoice',narrationRate:'rate',narrationVolume:'volume',
  narrationStyle:'style',narrationInterval:'commentaryInterval',narrationDelivery:'delivery',narrationOutput:'output',
  narrationBrain:'brain',narrationCuriosities:'curiosities',announceLineups:'announceLineups',
- narrationEngagement:'engagement',engagementInterval:'engagementInterval'};
+ narrationEngagement:'engagement',engagementInterval:'engagementInterval',narrationPlayerFocus:'playerFocus'};
 
 function fillNarrationSettings(settings){
  for(const [id,key] of Object.entries(narrationInputs)){
   const el=$(id);if(document.activeElement===el)continue;
-  if(el.type==='checkbox')el.checked=settings[key];else el.value=settings[key];
+  if(el.type==='checkbox')el.checked=!!settings[key];else el.value=settings[key]||'';
  }
+ $('customCommentText').value=(settings.customComments||[]).join('\n');
+ $('sponsorText').value=(settings.sponsorReads||[]).join('\n');
+ const entries=(settings.commentLibrary||[]).map(item=>({team:String(item.team||''),player:String(item.player||''),text:String(item.text||'')})).filter(item=>item.text);
+ renderSavedCommentLibrary(entries);
  settingsReady=true;updateNarrationLabels();renderNarrationStatus();
 }
 function renderNarrationStatus(local=narrationSession?.status||{}){
@@ -47,13 +51,28 @@ function updateNarrationLabels(){
  $('narrationRateValue').textContent=Number($('narrationRate').value).toLocaleString('pt-BR')+'×';
  $('narrationVolumeValue').textContent=Math.round(Number($('narrationVolume').value)*100)+'%';
 }
+function renderSavedCommentLibrary(entries=[]){
+ const list=$('savedCommentLibrary');
+ list.replaceChildren();
+ if(!entries.length){list.textContent='Nenhum comentário salvo no repertório.';return;}
+ for(const item of entries.slice(0,8)){
+  const row=document.createElement('div');row.className='footnote';
+  const label=[item.team,item.player].filter(Boolean).join(' · ')||'Geral';
+  row.textContent=`${label}: ${item.text}`;
+  list.append(row);
+ }
+}
 function saveNarrationPreferences(){
  if(!settingsReady)return;
  updateNarrationLabels();clearTimeout(saveTimer);
  const patch={};
  for(const [id,key] of Object.entries(narrationInputs)){
-  const el=$(id);patch[key]=el.type==='checkbox'?el.checked:['rate','volume','commentaryInterval','engagementInterval'].includes(key)?Number(el.value):el.value;
+  const el=$(id);if(!el)return;
+  patch[key]=el.type==='checkbox'?el.checked:['rate','volume','commentaryInterval','engagementInterval'].includes(key)?Number(el.value):el.value;
  }
+ patch.customComments=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,12);
+ patch.sponsorReads=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,8);
+ patch.commentLibrary=(narrationSession?.settings?.commentLibrary||[]).map(item=>({team:String(item.team||''),player:String(item.player||''),text:String(item.text||'')}));
  saveTimer=setTimeout(()=>{saveChain=saveChain.then(()=>narrationSession.save(patch)).catch(e=>notice(e.message,true));},150);
 }
 const narrationAction=fn=>async()=>{try{await fn();}catch(e){notice(e.message,true);}};
@@ -68,7 +87,44 @@ $('readLineups').onclick=narrationAction(()=>narrationSession.commandAction('lin
 $('skipLineups').onclick=narrationAction(()=>narrationSession.commandAction('skip_lineups'));
 $('useDynamicVoice').onclick=narrationAction(()=>narrationSession.save({voice:'kokoro:pm_alex',commentaryVoice:'kokoro:pf_dora',delivery:'dynamic',rate:1}));
 $('prepareBrain').onclick=narrationAction(async()=>{await brainOutput.prepare();showBrainStatus();});
+$('saveCommentLibrary').onclick=narrationAction(()=>{
+ const team=$('commentLibraryTeam').value.trim();
+ const player=$('commentLibraryPlayer').value.trim();
+ const text=$('commentLibraryText').value.trim();
+ if(!text){throw new Error('Escreva o comentário do repertório antes de salvar.');}
+ const items=[...(narrationSession?.settings?.commentLibrary||[])];
+ const entry={team,player,text};
+ const duplicate=items.find(item=>String(item.team||'').toLowerCase()===team.toLowerCase()&&String(item.player||'').toLowerCase()===player.toLowerCase()&&String(item.text||'').toLowerCase()===text.toLowerCase());
+ if(!duplicate){items.unshift(entry);}
+ narrationSession.settings={...(narrationSession.settings||{}),commentLibrary:items.slice(0,50)};
+ renderSavedCommentLibrary(items.slice(0,8));
+ return narrationSession.save({commentLibrary: items.slice(0,50)});
+});
+$('saveCustomComments').onclick=narrationAction(()=>{saveNarrationPreferences();notice('Comentários salvos.');});
+$('saveSponsorReads').onclick=narrationAction(()=>{saveNarrationPreferences();notice('Anúncios salvos.');});
 function showBrainStatus(){$('brainStatus').textContent=brainOutput.message;$('prepareBrain').disabled=!brainOutput.status?.installed||brainOutput.status?.ready;}
+function populatePlayerFocus(state){
+ const select=$('narrationPlayerFocus');
+ const players=[];
+ for(const side of ['home','away']){
+  const group=state?.lineups?.[side]||{};
+  for(const list of [group.starters||[],group.bench||[]]){
+   for(const player of list){
+    const name=String(player.name||'').trim();
+    if(!name)continue;
+    players.push({value:`${side}:${name}`,label:`${state[side]?.name || side} · ${name}${player.number?` · ${player.number}`:''}`});
+   }
+  }
+ }
+ const selected=(narrationSession?.settings?.playerFocus||'');
+ select.replaceChildren();
+ const empty=new Option('Nenhum','');select.add(empty);
+ for(const player of players){
+  const option=new Option(player.label,player.value);if(player.value===selected)option.selected=true;select.add(option);
+ }
+ const current=selected&&players.some(p=>p.value===selected)?selected:'';
+ if(!current&&select.value)select.value='';
+}
 $('refreshNarrationVoices').onclick=narrationAction(async()=>{await Promise.all([speechOutput.load(),brainOutput.load()]);loadNarrationVoices();showBrainStatus();});
 window.speechSynthesis?.addEventListener('voiceschanged',loadNarrationVoices);
 $('obsAudioUrl').textContent=location.origin+'/audio';
@@ -78,10 +134,12 @@ $('geLink').onclick=narrationAction(()=>narrationSession.request('/api/ge/option
 $('geAuto').onclick=narrationAction(async()=>{$('geUrl').value='';await narrationSession.request('/api/ge/options',{enabled:true,url:''});});
 function updateNarrationState(state){
  narrationSession.update(state);renderNarrationStatus();
+ populatePlayerFocus(state);
  const ge=state.ge||{};$('geStatus').textContent=ge.status||'A cobertura GE será buscada ao selecionar uma partida.';
  $('geEnabled').checked=ge.enabled!==false;
  $('geSource').replaceChildren();
  if(ge.url){const link=document.createElement('a');link.textContent='Abrir cobertura no GE';link.href=ge.url;link.target='_blank';link.rel='noopener';$('geSource').append(link);}
 }
+$('narrationPlayerFocus').onchange=narrationAction(()=>{saveNarrationPreferences();});
 function refreshClubContext(){narrationSession.refreshContext();}
 narrationSession.load().then(()=>{loadNarrationVoices();showBrainStatus();}).catch(e=>notice(e.message,true));

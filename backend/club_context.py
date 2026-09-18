@@ -45,8 +45,19 @@ def stadium_facts(row):
              'source': {'name': 'TheSportsDB', 'url': 'https://www.thesportsdb.com/venue/' + str(row['idVenue'])}}]
 
 
-def format_player_profile(player_name, birthday_text, nationality, number=None):
+def format_player_profile(player_name, birthday_text, nationality, number=None, position=''):
     intro = f'Olho no lance com {player_name}!'
+    role_label = ''
+    if position:
+        normalized = str(position).upper().replace('-', '').replace('_', '')
+        role_map = {
+            'GK': 'como goleiro', 'G': 'como goleiro', 'Goalkeeper': 'como goleiro',
+            'DF': 'na defesa', 'D': 'na defesa', 'LB': 'na lateral esquerda', 'RB': 'na lateral direita',
+            'MF': 'no meio de campo', 'M': 'no meio de campo', 'CM': 'no meio de campo', 'DM': 'no meio de campo',
+            'AM': 'no setor criativo', 'FW': 'na frente', 'F': 'na frente', 'ST': 'na frente', 'LW': 'na ponta esquerda', 'RW': 'na ponta direita',
+            'CF': 'como centroavante', 'CB': 'na zaga', 'CD': 'na zaga'
+        }
+        role_label = role_map.get(normalized, '').strip()
     chunks = []
     if birthday_text:
         chunks.append(f'Nascido em {birthday_text}')
@@ -54,13 +65,41 @@ def format_player_profile(player_name, birthday_text, nationality, number=None):
         chunks.append(f'na {nationality}')
     if number:
         chunks.append(f'o camisa {number}')
-    variants = [
+    if role_label:
+        chunks.append(role_label)
+    variants = {
+        'como goleiro': [
+            'traz segurança, leitura de jogo e coragem para sair jogando. É o ponto de equilíbrio do time.',
+            'tem organização defensiva, calma na saída e boa leitura de jogadas. Ajuda a dar segurança ao bloco.',
+            'acompanha a linha, fecha espaços e distribui a bola com calma na saída.'
+        ],
+        'na defesa': [
+            'tem presença, leitura de jogo e firmeza na marcação. Dá estabilidade para a linha defensiva.',
+            'faz bons cortes, antecipa os movimentos e organiza a saída de bola com inteligência.',
+            'ajuda a segurar o bloco, marcar e ligar a defesa com o meio.'
+        ],
+        'na frente': [
+            'tem presença ofensiva, mobilidade e capacidade de criar perigo na área. Gera ameaça constante.',
+            'faz a diferença em avanço, mobilidade e chegada no último passe. Sempre entra em zonas importantes.',
+            'aproveita bem os espaços, aparece na área e tenta desequilibrar a defesa.'
+        ],
+        'no meio de campo': [
+            'controla o ritmo, liga a defesa ao ataque e aparece em zonas importantes.',
+            'tem visão de jogo, toque e presença para ordenar o time em diferentes fases da partida.',
+            'ajuda a controlar o jogo e a levar a bola para frente com inteligência.'
+        ],
+    }
+    variant = (variants.get(role_label) or [
         'traz categoria, visão de jogo e presença no setor. É bola no pé e qualidade pura!',
         'tem leitura de jogo, entrega e presença no setor. Ajuda a construir e resolve bem a saída de bola.',
         'sabe controlar a fase, procurar espaço e dar opção. Tem qualidade no toque e presença decorativa no setor.',
         'influencia o jogo com inteligência e presença. Ajuda a ligar o time e a criar perigo com calma.'
-    ]
-    variant = variants[int(hashlib.md5(player_name.encode('utf-8')).hexdigest(), 16) % len(variants)]
+    ])[int(hashlib.md5(player_name.encode('utf-8')).hexdigest(), 16) % len((variants.get(role_label) or [
+        'traz categoria, visão de jogo e presença no setor. É bola no pé e qualidade pura!',
+        'tem leitura de jogo, entrega e presença no setor. Ajuda a construir e resolve bem a saída de bola.',
+        'sabe controlar a fase, procurar espaço e dar opção. Tem qualidade no toque e presença decorativa no setor.',
+        'influencia o jogo com inteligência e presença. Ajuda a ligar o time e a criar perigo com calma.'
+    ]))]
     if not chunks:
         return f'{intro} Uma peça importante no time, com qualidade, leitura de jogo e presença no setor.'
     lead = ', '.join(chunks)
@@ -90,9 +129,9 @@ def player_facts(rows, lineup, side, source, team_id):
                 pass
             country = COUNTRIES.get(row.get('strNationality'))
             number = player.get('number') or player.get('shirt_number') or player.get('camisa') or player.get('jersey')
-            if birthday_text or country or number:
+            if birthday_text or country or number or player.get('position'):
                 result.append({'id': 'player:' + row['idPlayer'],
-                               'text': format_player_profile(player['name'], birthday_text, country, number),
+                               'text': format_player_profile(player['name'], birthday_text, country, number, player.get('position')),
                                'side': side, 'player_id': str(player.get('id', '')), 'player_name': player['name'],
                                'source': {'name': 'TheSportsDB', 'url': 'https://www.thesportsdb.com/player/' + row['idPlayer']}})
     managers = [row for row in roster if row.get('strPosition') == 'Manager' and row.get('strPlayer')]
