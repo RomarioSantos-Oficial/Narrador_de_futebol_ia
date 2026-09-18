@@ -151,8 +151,8 @@ function saveNarrationPreferences(){
   const el=$(id);if(!el)return Promise.resolve();
   patch[key]=el.type==='checkbox'?el.checked:['rate','volume','commentaryInterval','engagementInterval'].includes(key)?Number(el.value):el.value;
  }
- patch.customComments=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,12);
- patch.sponsorReads=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,8);
+ patch.customComments=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean);
+ patch.sponsorReads=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean);
  patch.commentLibrary=(narrationSession?.settings?.commentLibrary||[]).map(item=>({team:String(item.team||''),player:String(item.player||''),text:String(item.text||'')}));
  return new Promise((resolve,reject)=>{
   saveTimer=setTimeout(()=>{
@@ -191,7 +191,7 @@ $('saveCommentLibrary').onclick=narrationAction(async()=>{
  notice('Comentário salvo. Ele será lido aleatoriamente em 1 a 10 minutos.');
 });
 $('saveCustomComments').onclick=narrationAction(async()=>{
- const items=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,12);
+ const items=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean);
  if(!items.length){throw new Error('Escreva ao menos um comentário antes de salvar.');}
  await narrationSession.save({customComments:items});
  narrationSession.settings={...(narrationSession.settings||{}),customComments:items};
@@ -199,7 +199,7 @@ $('saveCustomComments').onclick=narrationAction(async()=>{
  notice('Comentários salvos.');
 });
 $('saveSponsorReads').onclick=narrationAction(async()=>{
- const items=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,8);
+ const items=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean);
  if(!items.length){throw new Error('Escreva ao menos um anúncio antes de salvar.');}
  await narrationSession.save({sponsorReads:items});
  narrationSession.settings={...(narrationSession.settings||{}),sponsorReads:items};

@@ -62,10 +62,6 @@ class NarrationSettings(BaseModel):
                 continue
             seen.add(key)
             cleaned.append(text)
-        if info.field_name == 'customComments' and len(cleaned) > 12:
-            cleaned = cleaned[:12]
-        if info.field_name == 'sponsorReads' and len(cleaned) > 8:
-            cleaned = cleaned[:8]
         return cleaned
 
     @field_validator('playerFocus')
