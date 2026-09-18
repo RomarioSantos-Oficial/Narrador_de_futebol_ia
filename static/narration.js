@@ -10,7 +10,7 @@ const MatchEventsCompat = typeof MatchEvents !== 'undefined' ? MatchEvents : {
   },
   kind(e){
    const text=String(e.text||'');
-   if(/gol.{0,35}(?:anulad|cancelad)|(?:anulad|cancelad).{0,25}gol/i.test(text)||e.kind==='cancelled')return 'cancelled';
+   if(/gol.{0,35}(?:anulad|cancelad)|(?:anulad|cancelad).{0,25}gol/i.test(text)||e.kind==='cancelled')return 'event';
    if(e.corrected||e.kind==='correction')return 'correction';
    if(e.kind==='review'||/(?:VAR|vídeo).{0,50}(?:analisa|revis|verifica)|(?:revisão|checagem|análise).{0,40}(?:VAR|gol)|gol.{0,25}em análise/i.test(text))return 'review';
    if(e.kind==='goal'||(e.icon==='⚽'&&/^Gol\b/i.test(text)&&!/anulad|cancelad/i.test(text)))return 'goal';
@@ -111,6 +111,13 @@ class MatchNarrator {
    this.utterance=null;this.synth.cancel();
   }
  }
+ allowGEJump() {
+  if(!this.currentItem||this.currentItem.kind!=='analysis')return;
+  if(this.currentItem.panorama&&this.queue.some(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey)){
+   this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
+   this.queue.unshift(this.queue.splice(this.queue.findIndex(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey),1)[0]);
+  }
+ }
  disconnect() {
   if(!this.enabled)return;
   this.clearPlayback();this.resync=true;this.notify('Sem conexão com o servidor. Aguardando reconexão.');
@@ -132,20 +139,21 @@ class MatchNarrator {
   if(s.phase!=='in'||!event||event.speak===false)return false;
   const eventMinute=this.eventMinuteValue(event.minute);
   const nowMinute=this.eventMinuteValue(s.minute ?? s.clock_display ?? s.updated_at ?? '');
-  if(eventMinute==null||nowMinute==null)return false;
+  if(eventMinute==null)return false;
+  if(nowMinute==null)return true;
   return eventMinute >= Math.max(0, nowMinute - minutes);
  }
  events(s){
   const ge=(s.ge?.events||[]).filter(Boolean);
   const primary=(s.events||[]).filter(Boolean);
-  const merged=[...primary,...ge];
+  const preferred = s.ge?.ready && ge.length ? ge : [...primary,...ge];
   const byKey=new Map();
-  for(const event of merged){
+  for(const event of preferred){
    const key=this.eventKey(event);
    if(!byKey.has(key))byKey.set(key,event);
    else if(ge.some(item=>this.eventKey(item)===key)&&!primary.some(item=>this.eventKey(item)===key))byKey.set(key,event);
   }
-  return [...byKey.values()];
+  return [...byKey.values()].filter(Boolean);
  }
  feedKey(s){return s.ge?.ready?'ge:'+s.ge.session:'primary';}
  score(s) {return JSON.stringify([s.home?.score,s.away?.score]);}
@@ -230,7 +238,7 @@ class MatchNarrator {
   this.utterance=utterance;this.utteranceKind=item.kind;this.lastText=item.text;this.notify(this.previewing?'Testando a voz…':item.kind==='analysis'?'Panorama da partida…':'Narrando…');
   utterance.onwaiting=status=>{if(this.utterance===utterance)this.notify(status);};
   utterance.onstart=()=>{if(this.utterance===utterance){if(item.eventKey&&!item.replay)this.lastEvent={...item};this.notify(this.previewing?'Testando a voz…':item.kind==='analysis'?'Panorama da partida…':'Narrando…');}};
-  utterance.onend=()=>{if(this.utterance!==utterance)return;this.utterance=null;this.pump();};
+  utterance.onend=()=>{if(this.utterance!==utterance)return;this.utterance=null;this.allowGEJump();this.pump();};
   utterance.onerror=event=>{if(this.utterance!==utterance)return;this.stop(event.error==='not-allowed'?'O navegador bloqueou a fala. Clique em Testar voz e tente iniciar novamente.':event.message||'Não foi possível reproduzir a voz. Selecione outra voz e clique em Testar voz.');};
   try{this.synth.speak(utterance);}catch{this.stop('Não foi possível reproduzir a voz. Clique em Testar voz para tentar novamente.');}
  }
@@ -301,21 +309,25 @@ class MatchNarrator {
   }
   if(this.style!=='radio'||this.commentaryInterval===0||Date.now()-this.lastCommentAt<this.commentaryInterval*1000)return;
   const fresh=this.radio.fresh(s);
+  const geAhead=this.queue.some(item=>item.editorial||item.source?.name?.includes('ge')||item.eventKey);
+  if(geAhead) return;
   let comment='',source=null;
-  const cycle=this.analysisCycle++ % 10;
-  if(fresh){comment=this.radio.next(s);}
-  if(!comment&&(cycle===0||cycle===5)&&!this.currentItem?.panorama&&this.style==='radio'){
-   comment=this.radio.snapshot(s);source={name:'panorama'};
-  }
-  if(!comment&&this.curiosities){
+  const cycle = this.analysisCycle % 10;
+  this.analysisCycle += 1;
+  if(this.curiosities){
    this.contextSeen??=new Map();
    const facts=this.contextCandidates(s).filter(f=>!this.contextSeen.has(f.id)||Date.now()-this.contextSeen.get(f.id)>=600000);
    if(facts.length){
-    const group=(cycle < 6 ? 'stats' : cycle === 6 ? 'player' : 'club');
-    const fact=(group==='stats') ? (this.radio.fresh(s)?this.radio.next(s):facts[0]) :
-      facts.find(f=>group==='player' ? !!f.player_id : !f.player_id) || facts[0];
-    if(fact){comment=fact.text;source=fact.source;this.contextSeen.set(fact.id,Date.now());}
+    const playerFacts=facts.filter(f=>!!f.player_id);
+    const clubFacts=facts.filter(f=>!f.player_id);
+    const curiosityTurn=cycle % 5 === 0;
+    const fact = curiosityTurn ? (playerFacts[0] || clubFacts[0]) : (fresh ? this.radio.next(s) : null);
+    if(fact && typeof fact === 'object'){comment=fact.text;source=fact.source;this.contextSeen.set(fact.id,Date.now());}
    }
+  }
+  if(!comment&&fresh){comment=this.radio.next(s);}
+  if(!comment&&this.style==='radio'&&(!s.stats||Object.keys(s.stats||{}).length===0)&&(cycle===0||cycle===5)){
+   comment=this.radio.snapshot(s);source={name:'panorama'};
   }
   if(comment){this.lastCommentAt=Date.now();this.enqueue(comment,'analysis',{source,panorama:!!source&&source.name==='panorama'});}
  }
@@ -343,8 +355,18 @@ class MatchNarrator {
  update(s) {
   this.currentState=s;
   if(!this.enabled)return;
-  if(this.paused){this.baseline(s);return;}
+  const previousSource=this.currentState?.source;
+  if(this.paused){
+   this.currentState=s;
+   this.seen=new Set([...this.events(s).map(e=>this.eventKey(e)), ...this.seen]);
+   this.queue=[];
+   this.baseline(s);
+   return;
+  }
   if(this.resync){this.baseline(s);this.resync=false;this.notify('Conexão restabelecida. Aguardando novos lances.');return;}
+  if(previousSource&&s.source&&previousSource!==s.source){
+   this.queue=[];this.lastEvent=null;this.seen=new Set(this.events(s).map(e=>this.eventKey(e)));this.lastCommentAt=Date.now();
+  }
   if(this.matchKey!==this.identity(s)) {
    this.clearPlayback();this.baseline(s);
    this.enqueue(this.style==='radio'?this.radio.snapshot(s):`Partida selecionada: ${s.home.name} e ${s.away.name}. A narração acompanhará os próximos lances.`,this.style==='radio'?'analysis':'event',{panorama:true});
@@ -355,7 +377,7 @@ class MatchNarrator {
   if(feedChanged){
    this.lastFeed=this.feedKey(s);const liveHistory=this.events(s).filter(e=>!this.recentInPlayEvent(e,s,8));
    this.seen=new Set(liveHistory.map(e=>this.eventKey(e)));
-   this.queue=this.queue.filter(item=>!item.eventKey);
+   this.queue=this.queue.filter(item=>!item.eventKey||Date.now()-item.created<45000);
    if(this.currentItem?.eventKey&&this.utterance){this.utterance=null;this.synth.cancel();}
   }
   const fresh=[];

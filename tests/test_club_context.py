@@ -33,16 +33,17 @@ class ClubContextTests(unittest.TestCase):
         self.assertEqual(player_facts([row, row], lineup, 'home', 'ESPN', '133602'), [])
         self.assertEqual(stadium_facts({'idVenue': '1', 'strVenue': 'Teste', 'intFormedYear': ''}), [])
 
-    def test_player_profiles_use_broadcast_style_and_short_limit(self):
-        row = {'idPlayer': '11', 'idTeam': '133602', 'idESPN': '20', 'strPlayer': 'Dani Olmo',
+    def test_player_profiles_use_broadcast_style_without_truncating_voice_text(self):
+        player_name = 'Dani Olmo ' * 30
+        row = {'idPlayer': '11', 'idTeam': '133602', 'idESPN': '20', 'strPlayer': player_name,
                'strSport': 'Soccer', 'dateBorn': '1998-05-07', 'strNationality': 'Spain'}
-        lineup = {'starters': [{'id': '20', 'name': 'Dani Olmo', 'number': '20'}], 'bench': []}
+        lineup = {'starters': [{'id': '20', 'name': player_name, 'number': '20'}], 'bench': []}
         result = player_facts([row], lineup, 'home', 'ESPN (teste gratuito)', '133602')
         self.assertEqual(len(result), 1)
-        self.assertIn('Olho no lance com Dani Olmo', result[0]['text'])
+        self.assertIn('Olho no lance com', result[0]['text'])
         self.assertIn('7 de maio de 1998', result[0]['text'])
         self.assertIn('Espanha', result[0]['text'])
-        self.assertLessEqual(len(result[0]['text']), 350)
+        self.assertGreater(len(result[0]['text']), 350)
 
 
 class ClubCacheTests(unittest.IsolatedAsyncioTestCase):

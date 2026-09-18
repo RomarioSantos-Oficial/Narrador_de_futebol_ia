@@ -3,7 +3,7 @@ class MatchEvents {
  static key(e){return e.id!=null?String(e.id)+':'+(e.revision||e.text||''):JSON.stringify([e.minute,e.icon,e.text]);}
  static kind(e){
   const text=String(e.text||'');
-  if(/gol.{0,35}(?:anulad|cancelad)|(?:anulad|cancelad).{0,25}gol/i.test(text)||e.kind==='cancelled')return 'cancelled';
+  if(/gol.{0,35}(?:anulad|cancelad)|(?:anulad|cancelad).{0,25}gol/i.test(text)||e.kind==='cancelled')return 'event';
   if(e.corrected||e.kind==='correction')return 'correction';
   if(e.kind==='review'||/(?:VAR|vídeo).{0,50}(?:analisa|revis|verifica)|(?:revisão|checagem|análise).{0,40}(?:VAR|gol)|gol.{0,25}em análise/i.test(text))return 'review';
   if(e.kind==='goal'||(e.icon==='⚽'&&/^Gol\b/i.test(text)&&!/anulad|cancelad/i.test(text)))return 'goal';

@@ -103,6 +103,21 @@ class NarrationTests(unittest.TestCase):
         self.assertTrue(result['prioritized'])
         self.assertGreater(result['ge'], result['normal'])
 
+    def test_live_ge_event_without_current_clock_is_not_marked_as_history(self):
+        result = self.page.evaluate("""() => {
+            narrator.configure({voice:{lang:'pt-BR',localService:true},style:'events',commentaryInterval:0});
+            const event={id:'ge-1',minute:'27',text:'GE: passe em profundidade',editorial:true,speak:true};
+            const liveState={phase:'in',status:'AO VIVO',events:[],ge:{ready:true,session:'match-1',events:[event]}};
+            return {
+                recent: narrator.recentInPlayEvent(event, liveState, 8),
+                liveHistory: narrator.events(liveState).filter(e => !narrator.recentInPlayEvent(e, liveState, 8)).length,
+                queueable: narrator.eventSpeech(event)
+            };
+        }""")
+        self.assertTrue(result['recent'])
+        self.assertEqual(result['liveHistory'], 0)
+        self.assertIn('GE: passe em profundidade', result['queueable'])
+
     def test_same_live_event_is_not_spoken_twice_when_source_refreshes_id(self):
         result = self.page.evaluate("""() => {
             narrator.configure({voice:{lang:'pt-BR',localService:true},style:'events',commentaryInterval:0});

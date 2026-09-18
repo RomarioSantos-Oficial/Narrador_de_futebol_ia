@@ -2,6 +2,7 @@
 import asyncio
 import copy
 from datetime import datetime, timezone
+import hashlib
 import re
 import time
 
@@ -53,14 +54,17 @@ def format_player_profile(player_name, birthday_text, nationality, number=None):
         chunks.append(f'na {nationality}')
     if number:
         chunks.append(f'o camisa {number}')
+    variants = [
+        'traz categoria, visão de jogo e presença no setor. É bola no pé e qualidade pura!',
+        'tem leitura de jogo, entrega e presença no setor. Ajuda a construir e resolve bem a saída de bola.',
+        'sabe controlar a fase, procurar espaço e dar opção. Tem qualidade no toque e presença decorativa no setor.',
+        'influencia o jogo com inteligência e presença. Ajuda a ligar o time e a criar perigo com calma.'
+    ]
+    variant = variants[int(hashlib.md5(player_name.encode('utf-8')).hexdigest(), 16) % len(variants)]
     if not chunks:
-        text = f'{intro} Uma peça importante no time, com qualidade, leitura de jogo e presença no setor.'
-    else:
-        lead = ', '.join(chunks)
-        text = f'{intro} {lead}, traz categoria, visão de jogo e presença no setor. É bola no pé e qualidade pura!'
-    if len(text) > 350:
-        text = text[:347].rsplit(' ', 1)[0] + '...'
-    return text
+        return f'{intro} Uma peça importante no time, com qualidade, leitura de jogo e presença no setor.'
+    lead = ', '.join(chunks)
+    return f'{intro} {lead}. {variant}'
 
 
 def player_facts(rows, lineup, side, source, team_id):
