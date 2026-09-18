@@ -87,7 +87,7 @@ $('readLineups').onclick=narrationAction(()=>narrationSession.commandAction('lin
 $('skipLineups').onclick=narrationAction(()=>narrationSession.commandAction('skip_lineups'));
 $('useDynamicVoice').onclick=narrationAction(()=>narrationSession.save({voice:'kokoro:pm_alex',commentaryVoice:'kokoro:pf_dora',delivery:'dynamic',rate:1}));
 $('prepareBrain').onclick=narrationAction(async()=>{await brainOutput.prepare();showBrainStatus();});
-$('saveCommentLibrary').onclick=narrationAction(()=>{
+$('saveCommentLibrary').onclick=narrationAction(async()=>{
  const team=$('commentLibraryTeam').value.trim();
  const player=$('commentLibraryPlayer').value.trim();
  const text=$('commentLibraryText').value.trim();
@@ -98,10 +98,16 @@ $('saveCommentLibrary').onclick=narrationAction(()=>{
  if(!duplicate){items.unshift(entry);}
  narrationSession.settings={...(narrationSession.settings||{}),commentLibrary:items.slice(0,50)};
  renderSavedCommentLibrary(items.slice(0,8));
- return narrationSession.save({commentLibrary: items.slice(0,50)});
+ await narrationSession.save({commentLibrary: items.slice(0,50)});
+ $('commentLibraryText').value='';
+ $('commentLibraryTeam').value='';
+ $('commentLibraryPlayer').value='';
+ const delayMs=60000 + Math.random()*540000;
+ if(matchNarrator)matchNarrator.commentLibraryNextAt=Date.now()+delayMs;
+ notice('Comentário salvo. Ele será lido aleatoriamente em 1 a 10 minutos.');
 });
-$('saveCustomComments').onclick=narrationAction(()=>{saveNarrationPreferences();notice('Comentários salvos.');});
-$('saveSponsorReads').onclick=narrationAction(()=>{saveNarrationPreferences();notice('Anúncios salvos.');});
+$('saveCustomComments').onclick=narrationAction(()=>{saveNarrationPreferences();$('customCommentText').value='';notice('Comentários salvos.');});
+$('saveSponsorReads').onclick=narrationAction(()=>{saveNarrationPreferences();$('sponsorText').value='';notice('Anúncios salvos.');});
 function showBrainStatus(){$('brainStatus').textContent=brainOutput.message;$('prepareBrain').disabled=!brainOutput.status?.installed||brainOutput.status?.ready;}
 function populatePlayerFocus(state){
  const select=$('narrationPlayerFocus');

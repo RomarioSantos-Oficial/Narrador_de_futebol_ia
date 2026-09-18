@@ -17,6 +17,11 @@ class NarrationSession {
   const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const result=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Não foi possível atualizar a narração. Reinicie o programa.');
+  if(path==='/api/narration/settings'&&result&&typeof result==='object'){
+   this.settings={...(this.settings||{}),...result};
+   if(this.state&&this.state.narration&&typeof this.state.narration==='object')this.state.narration={...(this.state.narration||{}),...result};
+   this.onSettings?.(this.settings);
+  }
   return result;
  }
  async load(){

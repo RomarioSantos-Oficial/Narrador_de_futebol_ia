@@ -22,7 +22,7 @@ const MatchEventsCompat = typeof MatchEvents !== 'undefined' ? MatchEvents : {
 
 class MatchNarrator {
  constructor({synth=window.speechSynthesis,Utterance=window.SpeechSynthesisUtterance,onChange=()=>{},compose=null}={}) {
-  Object.assign(this,{synth,Utterance,onChange,enabled:false,previewing:false,paused:false,queue:[],utterance:null,seen:new Set(),scoreTimer:null,status:'Narração desligada.',lastText:'',voice:null,rate:1,volume:1,style:'events',commentaryInterval:90,lastCommentAt:0,customComments:[],sponsorReads:[],playerFocus:'',customIndex:0,sponsorIndex:0});
+  Object.assign(this,{synth,Utterance,onChange,enabled:false,previewing:false,paused:false,queue:[],utterance:null,seen:new Set(),scoreTimer:null,status:'Narração desligada.',lastText:'',voice:null,rate:1,volume:1,style:'events',commentaryInterval:90,lastCommentAt:0,customComments:[],sponsorReads:[],playerFocus:'',customIndex:0,sponsorIndex:0,commentLibraryNextAt:0});
   this.radio=new RadioCommentary();
   this.compose=compose;this.composing=null;this.finishAfterDrain=false;
   this.lineupQueue=[];this.lineupsSeen=new Set();
@@ -292,6 +292,7 @@ class MatchNarrator {
   if(requested){return pool.find(p=>p.name===requested)||pool.find(p=>p.name?.toLowerCase()===requested.toLowerCase())||null;}
   return pool[0]||null;
  }
+ randomLibraryDelay(){return 60000 + Math.random() * 540000;}
  customComment(s){
   const library=this.commentLibrary||[];
   const focused=this.featuredPlayer(s);
@@ -308,7 +309,10 @@ class MatchNarrator {
   });
   if(picks.length){
    const pick=picks[Math.floor(Math.random()*picks.length)];
-   if(pick && pick.text){return pick.text;}
+   if(pick && pick.text){
+    this.commentLibraryNextAt = Date.now() + this.randomLibraryDelay();
+    return pick.text;
+   }
   }
   if(!this.customComments.length)return '';
   const player=focused;
@@ -370,7 +374,10 @@ class MatchNarrator {
   let comment='',source=null;
   const cycle = this.analysisCycle % 10;
   this.analysisCycle += 1;
-  if((this.commentLibrary.length || this.customComments.length) && (cycle===0 || cycle===4)){
+  if(this.commentLibrary.length && Date.now() >= this.commentLibraryNextAt){
+   comment=this.customComment(s);source={name:'comentário do usuário'};
+  }
+  if(!comment && (this.commentLibrary.length || this.customComments.length) && (cycle===0 || cycle===4)){
    comment=this.customComment(s);source={name:'comentário do usuário'};
   }
   if(!comment && this.sponsorReads.length && cycle===5){
