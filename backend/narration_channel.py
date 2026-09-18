@@ -55,7 +55,7 @@ class NarrationSettings(BaseModel):
         seen = set()
         for item in value or []:
             text = str(item).strip()
-            if not text or len(text) > 300 or any(ch in text for ch in '\n\r\t'):
+            if not text or len(text) > 550 or any(ch in text for ch in '\n\r\t'):
                 continue
             key = text.casefold()
             if key in seen:
@@ -84,7 +84,7 @@ class NarrationSettings(BaseModel):
             team = str(item.get('team', '')).strip()[:80]
             player = str(item.get('player', '')).strip()[:80]
             text = str(item.get('text', '')).strip()
-            if not text or len(text) > 350 or any(ch in text for ch in '\n\r\t'):
+            if not text or len(text) > 550 or any(ch in text for ch in '\n\r\t'):
                 continue
             key = (team.casefold(), player.casefold(), text.casefold())
             if key in seen:

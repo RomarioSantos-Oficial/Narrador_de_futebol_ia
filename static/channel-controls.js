@@ -15,6 +15,8 @@ function fillNarrationSettings(settings){
  $('customCommentText').value=(settings.customComments||[]).join('\n');
  $('sponsorText').value=(settings.sponsorReads||[]).join('\n');
  const entries=(settings.commentLibrary||[]).map(item=>({team:String(item.team||''),player:String(item.player||''),text:String(item.text||'')})).filter(item=>item.text);
+ renderSavedTextList('savedCustomComments', settings.customComments||[], 'comentários');
+ renderSavedTextList('savedSponsorReads', settings.sponsorReads||[], 'anúncios');
  renderSavedCommentLibrary(entries);
  settingsReady=true;updateNarrationLabels();renderNarrationStatus();
 }
@@ -51,29 +53,112 @@ function updateNarrationLabels(){
  $('narrationRateValue').textContent=Number($('narrationRate').value).toLocaleString('pt-BR')+'×';
  $('narrationVolumeValue').textContent=Math.round(Number($('narrationVolume').value)*100)+'%';
 }
+function normalizeCommentLibraryEntries(raw=[]){
+ return (Array.isArray(raw)?raw:[]).map(item=>({team:String(item?.team||'').trim(),player:String(item?.player||'').trim(),text:String(item?.text||'').trim()})).filter(item=>item.text);
+}
+function persistCommentLibrary(entries=[]){
+ const items=normalizeCommentLibraryEntries(entries).slice(0,50);
+ narrationSession.settings={...(narrationSession.settings||{}),commentLibrary:items};
+ renderSavedCommentLibrary(items);
+ return narrationSession.save({commentLibrary:items});
+}
+function renderSavedTextList(containerId, entries=[], type='comentários'){
+ const container=$(containerId); if(!container)return;
+ container.replaceChildren();
+ const items=Array.isArray(entries)?entries.filter(Boolean).map(String).filter(Boolean):[];
+ const controls=document.createElement('div');controls.className='row actions';
+ const clearBtn=document.createElement('button');clearBtn.type='button';clearBtn.textContent='Limpar todos';clearBtn.onclick=narrationAction(async()=>{
+  const patch={};
+  if(type==='comentários')patch.customComments=[]; else if(type==='anúncios')patch.sponsorReads=[];
+  await narrationSession.save(patch);
+  narrationSession.settings={...(narrationSession.settings||{}),...patch};
+  renderSavedTextList(containerId, [], type);
+  $('customCommentText').value=(type==='comentários'?'':$('customCommentText').value)||$('customCommentText').value;
+  $('sponsorText').value=(type==='anúncios'?'':$('sponsorText').value)||$('sponsorText').value;
+  notice(`Lista de ${type} limpa.`);
+ });
+ const keepRecentBtn=document.createElement('button');keepRecentBtn.type='button';keepRecentBtn.textContent='Só manter os últimos 10';keepRecentBtn.onclick=narrationAction(async()=>{
+  const kept=items.slice(-10);
+  const patch={};
+  if(type==='comentários')patch.customComments=kept; else if(type==='anúncios')patch.sponsorReads=kept;
+  await narrationSession.save(patch);
+  narrationSession.settings={...(narrationSession.settings||{}),...patch};
+  renderSavedTextList(containerId, kept, type);
+  if(type==='comentários')$('customCommentText').value=kept.join('\n');
+  if(type==='anúncios')$('sponsorText').value=kept.join('\n');
+  notice(`Mantive os últimos 10 ${type}.`);
+ });
+ controls.append(clearBtn,keepRecentBtn);
+ container.append(controls);
+ if(!items.length){
+  const empty=document.createElement('div');empty.className='footnote';empty.textContent=`Nenhum ${type} salvo.`;container.append(empty);return;
+ }
+ const itemList=document.createElement('div');
+ for(const [index,item] of items.entries()){
+  const row=document.createElement('div');row.className='footnote';row.style.display='flex';row.style.gap='10px';row.style.alignItems='flex-start';row.style.justifyContent='space-between';row.style.marginTop='10px';
+  const content=document.createElement('div');content.style.flex='1';content.style.overflowWrap='anywhere';content.textContent=item;
+  const remove=document.createElement('button');remove.type='button';remove.className='danger';remove.textContent='Excluir este comentário';remove.onclick=narrationAction(async()=>{
+   const current=(type==='comentários'?(narrationSession?.settings?.customComments||[]):(narrationSession?.settings?.sponsorReads||[]));
+   const next=current.filter((candidate, candidateIndex)=>candidateIndex!==index || candidate!==item);
+   const patch={};
+   if(type==='comentários')patch.customComments=next; else if(type==='anúncios')patch.sponsorReads=next;
+   await narrationSession.save(patch);
+   narrationSession.settings={...(narrationSession.settings||{}),...patch};
+   renderSavedTextList(containerId, next, type);
+   if(type==='comentários')$('customCommentText').value=next.join('\n');
+   if(type==='anúncios')$('sponsorText').value=next.join('\n');
+   notice(`${type.charAt(0).toUpperCase()+type.slice(1).replace(/s$/,'')} removido.`);
+  });
+  row.append(content,remove);
+  itemList.append(row);
+ }
+ container.append(itemList);
+}
 function renderSavedCommentLibrary(entries=[]){
  const list=$('savedCommentLibrary');
  list.replaceChildren();
- if(!entries.length){list.textContent='Nenhum comentário salvo no repertório.';return;}
- for(const item of entries.slice(0,8)){
-  const row=document.createElement('div');row.className='footnote';
-  const label=[item.team,item.player].filter(Boolean).join(' · ')||'Geral';
-  row.textContent=`${label}: ${item.text}`;
-  list.append(row);
+ const controls=document.createElement('div');controls.className='row actions';
+ const clearBtn=document.createElement('button');clearBtn.type='button';clearBtn.textContent='Limpar todos';clearBtn.onclick=narrationAction(async()=>{await persistCommentLibrary([]);notice('Repertório limpo.');});
+ const keepRecentBtn=document.createElement('button');keepRecentBtn.type='button';keepRecentBtn.textContent='Só manter os últimos 10';keepRecentBtn.onclick=narrationAction(async()=>{const items=normalizeCommentLibraryEntries(entries).slice(0,10);await persistCommentLibrary(items);notice('Mantive os 10 comentários mais recentes.');});
+ controls.append(clearBtn,keepRecentBtn);
+ list.append(controls);
+ if(!entries.length){
+  const empty=document.createElement('div');empty.className='footnote';empty.textContent='Nenhum comentário salvo no repertório.';list.append(empty);return;
  }
+ const items=normalizeCommentLibraryEntries(entries);
+ const itemList=document.createElement('div');
+ for(const [index,item] of items.entries()){
+  const row=document.createElement('div');row.className='footnote';row.style.display='flex';row.style.gap='10px';row.style.alignItems='flex-start';row.style.justifyContent='space-between';row.style.marginTop='10px';
+  const content=document.createElement('div');content.style.flex='1';content.style.overflowWrap='anywhere';
+  const label=[item.team,item.player].filter(Boolean).join(' · ')||'Geral';
+  content.textContent=`${label}: ${item.text}`;
+  const remove=document.createElement('button');remove.type='button';remove.className='danger';remove.textContent='Excluir este comentário';remove.onclick=narrationAction(async()=>{
+   const current=normalizeCommentLibraryEntries(narrationSession?.settings?.commentLibrary||[]);
+   const next=current.filter((candidate, candidateIndex)=>candidateIndex!==index || candidate.team!==item.team || candidate.player!==item.player || candidate.text!==item.text);
+   await persistCommentLibrary(next);
+   notice('Comentário removido do repertório.');
+  });
+  row.append(content,remove);
+  itemList.append(row);
+ }
+ list.append(itemList);
 }
 function saveNarrationPreferences(){
- if(!settingsReady)return;
+ if(!settingsReady)return Promise.resolve();
  updateNarrationLabels();clearTimeout(saveTimer);
  const patch={};
  for(const [id,key] of Object.entries(narrationInputs)){
-  const el=$(id);if(!el)return;
+  const el=$(id);if(!el)return Promise.resolve();
   patch[key]=el.type==='checkbox'?el.checked:['rate','volume','commentaryInterval','engagementInterval'].includes(key)?Number(el.value):el.value;
  }
  patch.customComments=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,12);
  patch.sponsorReads=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,8);
  patch.commentLibrary=(narrationSession?.settings?.commentLibrary||[]).map(item=>({team:String(item.team||''),player:String(item.player||''),text:String(item.text||'')}));
- saveTimer=setTimeout(()=>{saveChain=saveChain.then(()=>narrationSession.save(patch)).catch(e=>notice(e.message,true));},150);
+ return new Promise((resolve,reject)=>{
+  saveTimer=setTimeout(()=>{
+   saveChain=saveChain.then(async()=>{const result=await narrationSession.save(patch); resolve(result);}).catch(e=>{notice(e.message,true); reject(e);});
+  },150);
+ });
 }
 const narrationAction=fn=>async()=>{try{await fn();}catch(e){notice(e.message,true);}};
 for(const id of Object.keys(narrationInputs))$(id).oninput=saveNarrationPreferences;
@@ -92,13 +177,11 @@ $('saveCommentLibrary').onclick=narrationAction(async()=>{
  const player=$('commentLibraryPlayer').value.trim();
  const text=$('commentLibraryText').value.trim();
  if(!text){throw new Error('Escreva o comentário do repertório antes de salvar.');}
- const items=[...(narrationSession?.settings?.commentLibrary||[])];
+ const items=normalizeCommentLibraryEntries(narrationSession?.settings?.commentLibrary||[]);
  const entry={team,player,text};
  const duplicate=items.find(item=>String(item.team||'').toLowerCase()===team.toLowerCase()&&String(item.player||'').toLowerCase()===player.toLowerCase()&&String(item.text||'').toLowerCase()===text.toLowerCase());
  if(!duplicate){items.unshift(entry);}
- narrationSession.settings={...(narrationSession.settings||{}),commentLibrary:items.slice(0,50)};
- renderSavedCommentLibrary(items.slice(0,8));
- await narrationSession.save({commentLibrary: items.slice(0,50)});
+ await persistCommentLibrary(items);
  $('commentLibraryText').value='';
  $('commentLibraryTeam').value='';
  $('commentLibraryPlayer').value='';
@@ -107,8 +190,22 @@ $('saveCommentLibrary').onclick=narrationAction(async()=>{
  if(narrationSession?.narrator) narrationSession.narrator.commentLibraryNextAt = Date.now() + delayMs;
  notice('Comentário salvo. Ele será lido aleatoriamente em 1 a 10 minutos.');
 });
-$('saveCustomComments').onclick=narrationAction(()=>{saveNarrationPreferences();$('customCommentText').value='';notice('Comentários salvos.');});
-$('saveSponsorReads').onclick=narrationAction(()=>{saveNarrationPreferences();$('sponsorText').value='';notice('Anúncios salvos.');});
+$('saveCustomComments').onclick=narrationAction(async()=>{
+ const items=$('customCommentText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,12);
+ if(!items.length){throw new Error('Escreva ao menos um comentário antes de salvar.');}
+ await narrationSession.save({customComments:items});
+ narrationSession.settings={...(narrationSession.settings||{}),customComments:items};
+ renderSavedTextList('savedCustomComments', items, 'comentários');
+ notice('Comentários salvos.');
+});
+$('saveSponsorReads').onclick=narrationAction(async()=>{
+ const items=$('sponsorText').value.split(/\n+/).map(v=>v.trim()).filter(Boolean).slice(0,8);
+ if(!items.length){throw new Error('Escreva ao menos um anúncio antes de salvar.');}
+ await narrationSession.save({sponsorReads:items});
+ narrationSession.settings={...(narrationSession.settings||{}),sponsorReads:items};
+ renderSavedTextList('savedSponsorReads', items, 'anúncios');
+ notice('Anúncios salvos.');
+});
 function showBrainStatus(){$('brainStatus').textContent=brainOutput.message;$('prepareBrain').disabled=!brainOutput.status?.installed||brainOutput.status?.ready;}
 function populatePlayerFocus(state){
  const select=$('narrationPlayerFocus');

@@ -218,8 +218,13 @@ class MatchNarrator {
   const front = kind==='goal' || meta.urgent || Boolean(meta.editorial) || ['cancelled','correction','review'].includes(kind);
   if(front)this.queue.unshift(...items);else this.queue.push(...items);
   this.sortQueue();
-  // Discard an old backlog instead of speaking minutes behind the feed.
-  while(this.queue.length>8){const drop=this.queue.findIndex(next=>this.queuePriority(next)<100);this.queue.splice(drop<0?this.queue.length-1:drop,1);}this.pump();this.notify();
+  // Preserve real-time GE events even when commentary backlog exists; only trim non-live narration chatter.
+  while(this.queue.length>12){
+   const drop=this.queue.findIndex(next=>!(next.eventKey||next.editorial||next.urgent||next.scoreAnnouncement||['goal','card','substitution','review','cancelled','correction'].includes(next.kind)));
+   if(drop<0)break;
+   this.queue.splice(drop,1);
+  }
+  this.pump();this.notify();
  }
  pump() {
   if(this.utterance||this.composing||this.paused||(!this.enabled&&!this.previewing))return;
@@ -360,7 +365,9 @@ class MatchNarrator {
   this.notify('Leitura das escalações pulada.');this.pump();
  }
  tick(s=this.currentState){
-  if(!s||!this.enabled||this.paused||this.resync||s.rehearsal?.disconnected||s.phase==='post'||this.utterance||this.composing||this.queue.length||this.scoreTimer)return;
+  if(!s||!this.enabled||this.paused||this.resync||s.rehearsal?.disconnected||s.phase==='post'||this.utterance||this.composing||this.scoreTimer)return;
+  const backlogLive=this.queue.some(item=>item.eventKey||item.editorial||item.urgent||item.scoreAnnouncement||['goal','card','substitution','review','cancelled','correction'].includes(item.kind));
+  if(backlogLive)return;
   if(this.lineupQueue.length){this.pump();return;}
   if(this.engagement&&Date.now()-this.lastEngagementAt>=this.engagementInterval*1000&&Date.now()-this.lastCommentAt>=15000){
    this.lastEngagementAt=Date.now();this.lastCommentAt=Date.now();
