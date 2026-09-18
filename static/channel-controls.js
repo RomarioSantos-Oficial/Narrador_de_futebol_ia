@@ -104,6 +104,7 @@ $('saveCommentLibrary').onclick=narrationAction(async()=>{
  $('commentLibraryPlayer').value='';
  const delayMs=60000 + Math.random()*540000;
  if(matchNarrator)matchNarrator.commentLibraryNextAt=Date.now()+delayMs;
+ if(narrationSession?.narrator) narrationSession.narrator.commentLibraryNextAt = Date.now() + delayMs;
  notice('Comentário salvo. Ele será lido aleatoriamente em 1 a 10 minutos.');
 });
 $('saveCustomComments').onclick=narrationAction(()=>{saveNarrationPreferences();$('customCommentText').value='';notice('Comentários salvos.');});

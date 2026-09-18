@@ -377,6 +377,9 @@ class MatchNarrator {
   if(this.commentLibrary.length && Date.now() >= this.commentLibraryNextAt){
    comment=this.customComment(s);source={name:'comentário do usuário'};
   }
+  if(!this.commentLibraryNextAt && this.commentLibrary.length && (cycle===0 || cycle===4)){
+   this.commentLibraryNextAt = Date.now() + this.randomLibraryDelay();
+  }
   if(!comment && (this.commentLibrary.length || this.customComments.length) && (cycle===0 || cycle===4)){
    comment=this.customComment(s);source={name:'comentário do usuário'};
   }
