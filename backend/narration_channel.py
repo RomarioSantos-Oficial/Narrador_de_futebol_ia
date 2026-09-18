@@ -87,7 +87,7 @@ class NarrationSettings(BaseModel):
                 continue
             seen.add(key)
             cleaned.append({'team': team, 'player': player, 'text': text})
-        return cleaned[:50]
+        return cleaned
 
 
 class QueueItem(BaseModel):

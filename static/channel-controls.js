@@ -57,7 +57,7 @@ function normalizeCommentLibraryEntries(raw=[]){
  return (Array.isArray(raw)?raw:[]).map(item=>({team:String(item?.team||'').trim(),player:String(item?.player||'').trim(),text:String(item?.text||'').trim()})).filter(item=>item.text);
 }
 function persistCommentLibrary(entries=[]){
- const items=normalizeCommentLibraryEntries(entries).slice(0,50);
+ const items=normalizeCommentLibraryEntries(entries);
  narrationSession.settings={...(narrationSession.settings||{}),commentLibrary:items};
  renderSavedCommentLibrary(items);
  return narrationSession.save({commentLibrary:items});
@@ -77,18 +77,7 @@ function renderSavedTextList(containerId, entries=[], type='comentários'){
   $('sponsorText').value=(type==='anúncios'?'':$('sponsorText').value)||$('sponsorText').value;
   notice(`Lista de ${type} limpa.`);
  });
- const keepRecentBtn=document.createElement('button');keepRecentBtn.type='button';keepRecentBtn.textContent='Só manter os últimos 10';keepRecentBtn.onclick=narrationAction(async()=>{
-  const kept=items.slice(-10);
-  const patch={};
-  if(type==='comentários')patch.customComments=kept; else if(type==='anúncios')patch.sponsorReads=kept;
-  await narrationSession.save(patch);
-  narrationSession.settings={...(narrationSession.settings||{}),...patch};
-  renderSavedTextList(containerId, kept, type);
-  if(type==='comentários')$('customCommentText').value=kept.join('\n');
-  if(type==='anúncios')$('sponsorText').value=kept.join('\n');
-  notice(`Mantive os últimos 10 ${type}.`);
- });
- controls.append(clearBtn,keepRecentBtn);
+ controls.append(clearBtn);
  container.append(controls);
  if(!items.length){
   const empty=document.createElement('div');empty.className='footnote';empty.textContent=`Nenhum ${type} salvo.`;container.append(empty);return;
@@ -119,8 +108,7 @@ function renderSavedCommentLibrary(entries=[]){
  list.replaceChildren();
  const controls=document.createElement('div');controls.className='row actions';
  const clearBtn=document.createElement('button');clearBtn.type='button';clearBtn.textContent='Limpar todos';clearBtn.onclick=narrationAction(async()=>{await persistCommentLibrary([]);notice('Repertório limpo.');});
- const keepRecentBtn=document.createElement('button');keepRecentBtn.type='button';keepRecentBtn.textContent='Só manter os últimos 10';keepRecentBtn.onclick=narrationAction(async()=>{const items=normalizeCommentLibraryEntries(entries).slice(0,10);await persistCommentLibrary(items);notice('Mantive os 10 comentários mais recentes.');});
- controls.append(clearBtn,keepRecentBtn);
+ controls.append(clearBtn);
  list.append(controls);
  if(!entries.length){
   const empty=document.createElement('div');empty.className='footnote';empty.textContent='Nenhum comentário salvo no repertório.';list.append(empty);return;
