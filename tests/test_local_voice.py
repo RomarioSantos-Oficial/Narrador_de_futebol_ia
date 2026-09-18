@@ -73,6 +73,17 @@ class VoiceRouteTests(unittest.TestCase):
         unavailable = self.client.post('/api/voice/synthesize', json={'text': 'Teste', 'voice': 'kokoro:pm_alex'})
         self.assertEqual(unavailable.status_code, 503)
 
+    def test_ge_event_kinds_are_accepted_by_voice_api(self):
+        class Voice:
+            def synthesize_wav(self, text, output, syn_config):
+                output.setparams((1, 2, 22050, 0, 'NONE', 'not compressed'))
+                output.writeframes(b'\x00\x00' * 2205)
+        self.voice.voice = Voice()
+        with patch.object(self.voice, 'status', return_value={'available': True}), patch.dict('sys.modules', {'piper': type('Piper', (), {'PiperVoice': Voice, 'SynthesisConfig': lambda **kwargs: kwargs})}):
+            for kind in ('substitution', 'review', 'cancelled', 'correction'):
+                result = self.client.post('/api/voice/synthesize', json={'text': 'Teste', 'voice': 'piper:pt_BR-faber-medium', 'kind': kind})
+                self.assertEqual(result.status_code, 200, msg=f'kind={kind} should be accepted')
+
     @unittest.skipUnless(importlib.util.find_spec('numpy'), 'Requires optional voice dependencies')
     def test_kokoro_routes_selected_voice_with_portuguese_and_dynamic_pauses(self):
         from unittest.mock import Mock

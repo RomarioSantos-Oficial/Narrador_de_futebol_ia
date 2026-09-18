@@ -62,7 +62,8 @@ class LocalBrain:
     def __init__(self, base):
         self.base = Path(base) / 'models' / 'brain'
         self.model = self.base / MODEL_NAME
-        self.executable = self.base / 'runtime' / 'llama-server.exe'
+        self.runtime_dir = self.base / 'runtime'
+        self.executable = self._resolve_runtime_executable()
         self.process = None
         self.job = None
         self.url = None
@@ -70,6 +71,18 @@ class LocalBrain:
         self.start_lock = asyncio.Lock()
         self.compose_lock = asyncio.Lock()
         self.token = secrets.token_urlsafe(32)
+
+    def _resolve_runtime_executable(self):
+        candidates = [
+            self.runtime_dir / 'llama-server.exe',
+            self.runtime_dir / 'llama-b10410-bin-win-cpu-x64' / 'llama-server.exe',
+            self.runtime_dir / 'llama-b10410-bin-win-vulkan-x64' / 'llama-server.exe',
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        nested = next((path for path in self.runtime_dir.rglob('llama-server.exe') if path.is_file()), None)
+        return nested or (self.runtime_dir / 'llama-server.exe')
 
     def status(self):
         if self.process and self.process.poll() is not None:

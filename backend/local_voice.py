@@ -20,7 +20,7 @@ class SpeechRequest(BaseModel):
     rate: float = Field(default=1, ge=0.7, le=1.4, allow_inf_nan=False)
     voice: Literal['piper:pt_BR-faber-medium', 'kokoro:pm_alex', 'kokoro:pm_santa', 'kokoro:pf_dora'] = 'piper:pt_BR-faber-medium'
     delivery: Literal['natural', 'dynamic'] = 'natural'
-    kind: Literal['event', 'analysis', 'goal', 'card'] = 'event'
+    kind: Literal['event', 'analysis', 'goal', 'card', 'substitution', 'review', 'cancelled', 'correction'] = 'event'
 
 
 class LocalVoice:
@@ -61,7 +61,8 @@ class LocalVoice:
         if len(self.waiters) >= self.max_waiters:
             raise HTTPException(429, 'Há pedidos de voz demais. Aguarde e mantenha apenas um painel narrando.',
                                 headers={'Retry-After': '1'})
-        priority = {'goal': 0, 'card': 1, 'event': 2, 'analysis': 3}[kind]
+        priority = {'goal': 0, 'card': 1, 'substitution': 1, 'cancelled': 1, 'correction': 1,
+                    'review': 2, 'event': 2, 'analysis': 3}.get(kind, 2)
         ticket = {'priority': priority}
         self.waiters.append(ticket)
         self.waiters.sort(key=lambda item: item['priority'])
@@ -93,6 +94,8 @@ class LocalVoice:
         sentence_pause, clause_pause = 0.25, 0.1
         if payload.delivery == 'dynamic':
             sentence_pause, clause_pause = {'goal': (0.14, 0.06), 'card': (0.2, 0.08),
+                                            'substitution': (0.18, 0.08), 'review': (0.22, 0.1),
+                                            'cancelled': (0.2, 0.08), 'correction': (0.2, 0.08),
                                             'analysis': (0.32, 0.12)}.get(payload.kind, (0.25, 0.1))
         samples, sample_rate = self.kokoro.create(payload.text, voice=payload.voice.split(':')[1],
                                                  lang='pt-br', speed=payload.rate,

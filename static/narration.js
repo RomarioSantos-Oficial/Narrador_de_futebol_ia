@@ -1,18 +1,42 @@
 // Narrates changes in the supplied match data. Never infers passes or attacks.
+const MatchEventsCompat = typeof MatchEvents !== 'undefined' ? MatchEvents : {
+  key(e){
+   const minute=String(e.minute ?? '').replace(/['′\s]/g,'');
+   const text=String(e.text || '').replace(/\s+/g,' ').trim().toLowerCase();
+   const players=Array.isArray(e.players)?e.players.map(p=>`${p.id||''}:${p.name||''}:${p.position||''}`).join('|'):'';
+   const kind=e.kind || this.kind?.(e) || '';
+   const stableId=e.id!=null&&!/^\d+$/.test(String(e.id))?String(e.id):null;
+   return JSON.stringify([stableId ? `id:${stableId}` : null, minute, e.icon || '', kind, text, players, e.corrected ? 'corrected' : '']);
+  },
+  kind(e){
+   const text=String(e.text||'');
+   if(/gol.{0,35}(?:anulad|cancelad)|(?:anulad|cancelad).{0,25}gol/i.test(text)||e.kind==='cancelled')return 'cancelled';
+   if(e.corrected||e.kind==='correction')return 'correction';
+   if(e.kind==='review'||/(?:VAR|vídeo).{0,50}(?:analisa|revis|verifica)|(?:revisão|checagem|análise).{0,40}(?:VAR|gol)|gol.{0,25}em análise/i.test(text))return 'review';
+   if(e.kind==='goal'||(e.icon==='⚽'&&/^Gol\b/i.test(text)&&!/anulad|cancelad/i.test(text)))return 'goal';
+   if(e.kind==='card'||['🟨','🟥'].includes(e.icon)||/^Cartão (amarelo|vermelho)/i.test(text))return 'card';
+   if(e.kind==='substitution'||/substitui|^Sai\b.*\bentra\b/i.test(text))return 'substitution';
+   return 'event';
+  }
+};
+
 class MatchNarrator {
  constructor({synth=window.speechSynthesis,Utterance=window.SpeechSynthesisUtterance,onChange=()=>{},compose=null}={}) {
   Object.assign(this,{synth,Utterance,onChange,enabled:false,previewing:false,paused:false,queue:[],utterance:null,seen:new Set(),scoreTimer:null,status:'Narração desligada.',lastText:'',voice:null,rate:1,volume:1,style:'events',commentaryInterval:90,lastCommentAt:0});
   this.radio=new RadioCommentary();
   this.compose=compose;this.composing=null;this.finishAfterDrain=false;
   this.lineupQueue=[];this.lineupsSeen=new Set();
+  this.analysisCycle=0;
  }
- configure({voice,commentaryVoice=null,rate=1,volume=1,style='events',commentaryInterval=90,delivery='natural',curiosities=false,announceLineups=false,engagement=false,engagementInterval=600}) {
+ configure({voice,commentaryVoice=null,rate=1,volume=1,commentaryRate=null,commentaryVolume=null,pronunciations={},stageScripts=true,style='events',commentaryInterval=90,delivery='natural',curiosities=false,announceLineups=false,engagement=false,engagementInterval=600}) {
   this.voice=voice;
   this.commentaryVoice=commentaryVoice||voice;this.curiosities=curiosities;
   if(this.announceLineups&&!announceLineups)this.lineupQueue=this.lineupQueue.filter(item=>item.manualLineup);
   this.announceLineups=announceLineups;
   this.rate=Math.min(1.4,Math.max(.7,Number(rate)||1));
   this.volume=Number.isFinite(Number(volume))?Math.min(1,Math.max(0,Number(volume))):1;
+  this.commentaryRate=commentaryRate??this.rate;this.commentaryVolume=commentaryVolume??this.volume;
+  this.pronunciations=pronunciations;this.stageScripts=stageScripts;
   const previousStyle=this.style;this.style=style==='radio'?'radio':'events';
   this.delivery=delivery==='dynamic'?'dynamic':'natural';
   this.commentaryInterval=[0,30,60,90,120].includes(Number(commentaryInterval))?Number(commentaryInterval):90;
@@ -21,7 +45,9 @@ class MatchNarrator {
  }
  notify(status=this.status) {
   this.status=status;
-  this.onChange({enabled:this.enabled,active:this.enabled||this.previewing,paused:this.paused,status,lastText:this.lastText,lastSource:this.lastSource});
+  const describe=item=>item?{text:item.text.slice(0,900),kind:item.kind,role:item.kind==='analysis'?'Comentarista':'Narrador',label:item.lineup?'Escalação':item.script?'Roteiro':item.engagement?'Like e inscrição':item.replay?'Repetição':''}:null;
+  this.onChange({enabled:this.enabled,active:this.enabled||this.previewing,paused:this.paused,status,lastText:this.lastText,lastSource:this.lastSource,
+   current:describe(this.utterance?this.currentItem:this.composing?.item),queue:[...this.queue,...this.lineupQueue].slice(0,40).map(describe),can_repeat:!!this.lastEvent});
  }
  clearPlayback() {
   clearTimeout(this.scoreTimer);this.scoreTimer=null;this.queue=[];
@@ -46,6 +72,37 @@ class MatchNarrator {
   if(this.utterance||this.composing||this.queue.length)throw new Error('Aguarde a fala atual terminar para ouvir o panorama.');
   this.currentState=s;this.lastCommentAt=Date.now();this.enqueue(this.radio.snapshot(s),'analysis',{panorama:true});
  }
+ skip(){
+  if(this.paused)throw new Error('Retome a voz para pular a fala atual.');
+  this.cancelComposition();
+  if(this.utterance){this.utterance=null;this.synth.cancel();}
+  this.currentItem=null;this.notify('Fala pulada.');this.pump();
+ }
+ repeat(s=this.currentState){
+  if(!this.lastEvent)throw new Error('Nenhum lance disponível para repetir.');
+  if(this.paused)throw new Error('Retome a voz para repetir o lance.');
+  if(this.lastEvent.eventKey&&!this.events(s).some(e=>this.eventKey(e)===this.lastEvent.eventKey))throw new Error('Esse lance foi corrigido ou já saiu da lista da fonte.');
+  if(!this.enabled&&s.phase==='post'){this.requireVoice();this.enabled=true;this.finishAfterDrain=true;}
+  if(!this.enabled)throw new Error('Inicie a narração para repetir o lance.');
+  this.interruptAnalysis();
+  this.enqueue('Repetindo o último lance. '+this.lastEvent.text,'event',{...this.lastEvent,replay:true,text:'Repetindo o último lance. '+this.lastEvent.text,created:Date.now(),kind:'event'});
+ }
+ readStage(s=this.currentState){
+  if(this.paused)throw new Error('Retome a voz para ler o roteiro.');
+  if(!this.enabled&&s?.phase==='post'){this.requireVoice();this.enabled=true;this.finishAfterDrain=true;}
+  if(!this.enabled)throw new Error('Inicie a narração para ler o roteiro.');
+  if(this.queue.some(i=>i.script)||this.currentItem?.script&&this.utterance)throw new Error('O roteiro já está na fila.');
+  this.currentState=s;
+  for(const text of this.radio.stage(s))this.enqueue(text,'analysis',{script:true});
+ }
+ pronounce(text){
+  const entries=Object.entries(this.pronunciations||{}).sort((a,b)=>b[0].length-a[0].length);
+  if(!entries.length)return text;
+  const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const lookup=new Map(entries.map(([key,value])=>[key.toLocaleLowerCase('pt-BR'),value]));
+  const pattern=new RegExp('(?<![\\p{L}\\p{N}])(?:'+entries.map(([key])=>escape(key)).join('|')+')(?![\\p{L}\\p{N}])','giu');
+  return text.replace(pattern,match=>lookup.get(match.toLocaleLowerCase('pt-BR'))||match);
+ }
  interruptAnalysis({preserveLineups=false}={}){
   this.queue=this.queue.filter(item=>item.kind!=='analysis'||(preserveLineups&&item.lineup));
   if(this.composing?.item.kind==='analysis')this.cancelComposition();
@@ -63,16 +120,42 @@ class MatchNarrator {
   if(!this.voice?.localService||!/^pt(?:-|_)/i.test(this.voice.lang))throw new Error('Selecione uma voz local em português.');
  }
  identity(s) {return JSON.stringify([s.competition,s.home?.name,s.away?.name,s.kickoff||'',s.source||'']);}
- eventKey(e) {return e.id!=null?String(e.id)+(e.revision?':'+e.revision:''):JSON.stringify([e.minute,e.icon,e.text]);}
- events(s){return s.ge?.ready?s.ge.events||[]:s.events||[];}
+ eventKey(e) {return MatchEventsCompat.key(e);}
+ eventMinuteValue(value){
+  if(value==null||value===''||value==='—')return null;
+  const text=String(value).replace(/['′\s]/g,'');
+  const match=text.match(/^(\d+)(?:\+(\d+))?$/);
+  if(!match)return null;
+  return Number(match[1])+Number(match[2]||0);
+ }
+ recentInPlayEvent(event,s,minutes=8){
+  if(s.phase!=='in'||!event||event.speak===false)return false;
+  const eventMinute=this.eventMinuteValue(event.minute);
+  const nowMinute=this.eventMinuteValue(s.minute ?? s.clock_display ?? s.updated_at ?? '');
+  if(eventMinute==null||nowMinute==null)return false;
+  return eventMinute >= Math.max(0, nowMinute - minutes);
+ }
+ events(s){
+  const ge=(s.ge?.events||[]).filter(Boolean);
+  const primary=(s.events||[]).filter(Boolean);
+  const merged=[...primary,...ge];
+  const byKey=new Map();
+  for(const event of merged){
+   const key=this.eventKey(event);
+   if(!byKey.has(key))byKey.set(key,event);
+   else if(ge.some(item=>this.eventKey(item)===key)&&!primary.some(item=>this.eventKey(item)===key))byKey.set(key,event);
+  }
+  return [...byKey.values()];
+ }
  feedKey(s){return s.ge?.ready?'ge:'+s.ge.session:'primary';}
  score(s) {return JSON.stringify([s.home?.score,s.away?.score]);}
  scoreboard(s) {return `${s.home.name}, ${s.home.score}. ${s.away.name}, ${s.away.score}.`;}
  baseline(s) {
   this.currentState=s;
-  if(this.matchKey!==this.identity(s)){this.contextFacts=[];this.contextSeen=new Map();this.lineupsSeen=new Set();}
+  if(this.matchKey!==this.identity(s)){this.contextFacts=[];this.contextSeen=new Map();this.lineupsSeen=new Set();this.lastEvent=null;}
   this.matchKey=this.identity(s);this.lastScore=this.score(s);this.lastPhase=s.phase;this.lastStatus=s.status;
-  this.seen=new Set(this.events(s).map(e=>this.eventKey(e)));this.lastFeed=this.feedKey(s);
+  const liveHistory=this.events(s).filter(e=>!this.recentInPlayEvent(e,s,8));
+  this.seen=new Set(liveHistory.map(e=>this.eventKey(e)));this.lastFeed=this.feedKey(s);
   this.lastEngagementAt=Date.now();
   this.radio.reset(s);this.lastCommentAt=Date.now();
   this.goalCount=0;
@@ -81,7 +164,9 @@ class MatchNarrator {
   this.requireVoice();
   if(!s)throw new Error('Aguarde o painel carregar a partida.');
   this.stop();this.lineupsSeen=new Set();this.baseline(s);this.resync=false;this.enabled=true;
-  this.enqueue(this.style==='radio'?this.radio.snapshot(s):'Narração ativada. Aguardando novos lances.',this.style==='radio'?'analysis':'event',{panorama:true});
+  if(this.stageScripts&&s.phase==='pre')this.readStage(s);
+  else this.enqueue(this.style==='radio'?this.radio.snapshot(s):'Narração ativada. Aguardando novos lances.',this.style==='radio'?'analysis':'event',{panorama:true});
+  this.update(s);
   this.scheduleLineups(s);
  }
  preview({commentary=false}={}) {
@@ -93,21 +178,35 @@ class MatchNarrator {
    this.enqueue('Agora, um exemplo de gol: é gol! Bola na rede!','goal');
   }else this.enqueue('Esta é a voz da sua transmissão. Gols, cartões e novos lances serão anunciados em português.');
  }
+ queuePriority(item){
+  if(item.urgent||item.scoreAnnouncement)return 200;
+  if(item.editorial&&(item.eventKey||item.source?.name?.includes('ge')||item.source?.url?.includes('ge.globo.com')))return 180;
+  if(['goal','card','substitution','review','cancelled','correction'].includes(item.kind))return 150;
+  if(item.eventKey)return 100;
+  if(item.kind==='event')return 90;
+  if(item.lineup||item.script||item.panorama||item.engagement||item.kind==='analysis')return 10;
+  return 50;
+ }
  enqueue(text,kind='event',meta={}) {
   const parts=[];let rest=String(text);
   while(meta.editorial&&rest.length>900){const split=rest.lastIndexOf(' ',850);const at=split>400?split:850;parts.push(rest.slice(0,at));rest=rest.slice(at).trimStart();}
   parts.push(rest.slice(0,900));
+  const eventKey=meta.eventKey?String(meta.eventKey):null;
+  if(eventKey){this.queue=this.queue.filter(item=>!item.eventKey||item.eventKey!==eventKey||item.text===text);} 
   const items=parts.map(text=>({text,created:Date.now(),kind,...meta}));
-  if(kind==='goal'||meta.urgent)this.queue.unshift(...items);else this.queue.push(...items);
+  const front = kind==='goal' || meta.urgent || Boolean(meta.editorial) || ['cancelled','correction','review'].includes(kind);
+  if(front)this.queue.unshift(...items);else this.queue.push(...items);
+  this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
   // Discard an old backlog instead of speaking minutes behind the feed.
-  while(this.queue.length>8){const drop=this.queue.findIndex(next=>next.kind!=='goal'&&!next.urgent);this.queue.splice(drop<0?this.queue.length-1:drop,1);}this.pump();
+  while(this.queue.length>8){const drop=this.queue.findIndex(next=>this.queuePriority(next)<100);this.queue.splice(drop<0?this.queue.length-1:drop,1);}this.pump();this.notify();
  }
  pump() {
   if(this.utterance||this.composing||this.paused||(!this.enabled&&!this.previewing))return;
   this.queue=this.queue.filter(item=>Date.now()-item.created<45000);
+  this.queue.sort((a,b)=>this.queuePriority(b)-this.queuePriority(a)||a.created-b.created);
   const item=this.queue.shift()||(!this.scoreTimer?this.lineupQueue.shift():null);
   if(!item){if(this.finishAfterDrain){this.stop('Partida encerrada. Fila e áudios liberados.');return;}this.previewing=false;this.notify(this.enabled?'Aguardando novos lances.':'Teste de voz concluído.');return;}
-  if(this.compose&&this.enabled&&!this.previewing&&!item.lineup){
+  if(this.compose&&this.enabled&&!this.previewing&&!item.lineup&&!item.script){
    const pending={item,controller:new AbortController()};this.composing=pending;
    this.notify('Preparando comentário…');
    Promise.resolve().then(()=>this.compose(item,this.currentState,pending.controller.signal)).then(text=>{
@@ -122,14 +221,15 @@ class MatchNarrator {
  }
  speakItem(item){
   this.currentItem=item;
-  const utterance=new this.Utterance(item.text);
-  const voice=item.kind==='analysis'&&(!this.previewing||this.previewRole==='commentary')?this.commentaryVoice||this.voice:this.voice;
+  const utterance=new this.Utterance(this.pronounce(item.text));
+  const commentary=item.kind==='analysis'&&(!this.previewing||this.previewRole==='commentary');
+  const voice=commentary?this.commentaryVoice||this.voice:this.voice;
   const pace=this.delivery==='dynamic'?({goal:1.08,card:1.02,analysis:.95}[item.kind]||1):1;
-  Object.assign(utterance,{voice,lang:voice.lang,rate:Math.min(1.4,Math.max(.7,this.rate*pace)),volume:this.volume,pitch:1,delivery:this.delivery||'natural',kind:item.kind});
+  Object.assign(utterance,{voice,lang:voice.lang,rate:Math.min(1.4,Math.max(.7,(commentary?this.commentaryRate:this.rate)*pace)),volume:commentary?this.commentaryVolume:this.volume,pitch:1,delivery:this.delivery||'natural',kind:item.kind});
   this.lastSource=item.source||null;
   this.utterance=utterance;this.utteranceKind=item.kind;this.lastText=item.text;this.notify(this.previewing?'Testando a voz…':item.kind==='analysis'?'Panorama da partida…':'Narrando…');
   utterance.onwaiting=status=>{if(this.utterance===utterance)this.notify(status);};
-  utterance.onstart=()=>{if(this.utterance===utterance)this.notify(this.previewing?'Testando a voz…':item.kind==='analysis'?'Panorama da partida…':'Narrando…');};
+  utterance.onstart=()=>{if(this.utterance===utterance){if(item.eventKey&&!item.replay)this.lastEvent={...item};this.notify(this.previewing?'Testando a voz…':item.kind==='analysis'?'Panorama da partida…':'Narrando…');}};
   utterance.onend=()=>{if(this.utterance!==utterance)return;this.utterance=null;this.pump();};
   utterance.onerror=event=>{if(this.utterance!==utterance)return;this.stop(event.error==='not-allowed'?'O navegador bloqueou a fala. Clique em Testar voz e tente iniciar novamente.':event.message||'Não foi possível reproduzir a voz. Selecione outra voz e clique em Testar voz.');};
   try{this.synth.speak(utterance);}catch{this.stop('Não foi possível reproduzir a voz. Clique em Testar voz para tentar novamente.');}
@@ -192,7 +292,7 @@ class MatchNarrator {
   this.notify('Leitura das escalações pulada.');this.pump();
  }
  tick(s=this.currentState){
-  if(!s||!this.enabled||this.paused||this.resync||s.phase==='post'||this.utterance||this.composing||this.queue.length||this.scoreTimer)return;
+  if(!s||!this.enabled||this.paused||this.resync||s.rehearsal?.disconnected||s.phase==='post'||this.utterance||this.composing||this.queue.length||this.scoreTimer)return;
   if(this.lineupQueue.length){this.pump();return;}
   if(this.engagement&&Date.now()-this.lastEngagementAt>=this.engagementInterval*1000&&Date.now()-this.lastCommentAt>=15000){
    this.lastEngagementAt=Date.now();this.lastCommentAt=Date.now();
@@ -201,13 +301,29 @@ class MatchNarrator {
   }
   if(this.style!=='radio'||this.commentaryInterval===0||Date.now()-this.lastCommentAt<this.commentaryInterval*1000)return;
   const fresh=this.radio.fresh(s);
-  let comment=fresh?this.radio.next(s):'',source=null;
+  let comment='',source=null;
+  const cycle=this.analysisCycle++ % 10;
+  if(fresh){comment=this.radio.next(s);}
+  if(!comment&&(cycle===0||cycle===5)&&!this.currentItem?.panorama&&this.style==='radio'){
+   comment=this.radio.snapshot(s);source={name:'panorama'};
+  }
   if(!comment&&this.curiosities){
    this.contextSeen??=new Map();
-   const fact=this.contextCandidates(s).find(f=>!this.contextSeen.has(f.id)||Date.now()-this.contextSeen.get(f.id)>=600000);
-   if(fact){comment=fact.text;source=fact.source;this.contextSeen.set(fact.id,Date.now());}
+   const facts=this.contextCandidates(s).filter(f=>!this.contextSeen.has(f.id)||Date.now()-this.contextSeen.get(f.id)>=600000);
+   if(facts.length){
+    const group=(cycle < 6 ? 'stats' : cycle === 6 ? 'player' : 'club');
+    const fact=(group==='stats') ? (this.radio.fresh(s)?this.radio.next(s):facts[0]) :
+      facts.find(f=>group==='player' ? !!f.player_id : !f.player_id) || facts[0];
+    if(fact){comment=fact.text;source=fact.source;this.contextSeen.set(fact.id,Date.now());}
+   }
   }
-  if(comment){this.lastCommentAt=Date.now();this.enqueue(comment,'analysis',{source});}
+  if(comment){this.lastCommentAt=Date.now();this.enqueue(comment,'analysis',{source,panorama:!!source&&source.name==='panorama'});}
+ }
+ eventOrder(event){
+  const minute=String(event.minute ?? '').replace(/['′\s]/g,'');
+  const match=minute.match(/^(\d+)(?:\+(\d+))?$/);
+  const score=match ? Number(match[1]) + Number(match[2] || 0) : 0;
+  return score * 1000 + (Number(event.revision||event.updated_at||0) || 0);
  }
  eventSpeech(event) {
   if(!event.text||event.text==='Lance registrado na partida')return '';
@@ -222,9 +338,7 @@ class MatchNarrator {
   return this.delivery==='dynamic'&&this.eventKind(event)==='goal'?text.replace(/[.!?]\s*$/,'')+'. '+when.trim():when+text;
  }
  eventKind(event){
-  if(event.editorial)return ['goal','card','event'].includes(event.kind)?event.kind:'event';
-  if(event.icon==='⚽'&&/^Gol\b/i.test(event.text||'')&&!/anulad|cancelad/i.test(event.text))return 'goal';
-  return /^Cartão (amarelo|vermelho)/i.test(event.text||'')?'card':'event';
+  return MatchEventsCompat.kind(event);
  }
  update(s) {
   this.currentState=s;
@@ -239,7 +353,8 @@ class MatchNarrator {
   }
   const feedChanged=this.lastFeed!==this.feedKey(s);
   if(feedChanged){
-   this.lastFeed=this.feedKey(s);this.seen=new Set(this.events(s).map(e=>this.eventKey(e)));
+   this.lastFeed=this.feedKey(s);const liveHistory=this.events(s).filter(e=>!this.recentInPlayEvent(e,s,8));
+   this.seen=new Set(liveHistory.map(e=>this.eventKey(e)));
    this.queue=this.queue.filter(item=>!item.eventKey);
    if(this.currentItem?.eventKey&&this.utterance){this.utterance=null;this.synth.cancel();}
   }
@@ -247,31 +362,61 @@ class MatchNarrator {
   const available=new Set(this.events(s).map(e=>this.eventKey(e)));
   this.queue=this.queue.filter(item=>!item.editorial||available.has(item.eventKey));
   if(this.currentItem?.editorial&&this.utterance&&!available.has(this.currentItem.eventKey)){this.utterance=null;this.synth.cancel();}
-  for(const event of this.events(s)) {
+  if(this.composing?.item.editorial&&!available.has(this.composing.item.eventKey))this.cancelComposition();
+  if(this.lastEvent?.editorial&&!available.has(this.lastEvent.eventKey))this.lastEvent=null;
+  const ordered=[...this.events(s)].sort((a,b)=>this.eventOrder(a)-this.eventOrder(b));
+  for(const event of ordered) {
+   if(event.speak===false)continue;
    const key=this.eventKey(event);
-   if(!this.seen.has(key)){this.seen.add(key);if(event.speak!==false)fresh.push(event);}
+   if(this.seen.has(key))continue;
+   if(this.lastEvent?.eventKey===key)continue;
+   if(this.currentItem?.eventKey===key)continue;
+   if(this.queue.some(item=>item.eventKey===key))continue;
+   fresh.push(event);
   }
+  // Respeitar a fala em andamento: se já existe um comentário ou lance sendo lido,
+  // o próximo lance deve aguardar a conclusão da fala atual e entrar depois.
   while(this.seen.size>1000)this.seen.delete(this.seen.values().next().value);
   // GE can announce a goal before the primary score provider catches up.
   const goal=fresh.some(e=>e.icon==='⚽'&&!e.editorial),ended=s.phase==='post'&&this.lastPhase!=='post';
   const scoreChanged=this.score(s)!==this.lastScore;
+  const previousScore=JSON.parse(this.lastScore||'[]');
+  const scoreReduced=[s.home?.score,s.away?.score].some((value,i)=>value!=null&&previousScore[i]!=null&&Number(value)<Number(previousScore[i]));
+  const correction=scoreReduced||fresh.some(e=>['cancelled','correction','review'].includes(this.eventKind(e)));
+  if(correction){
+   this.queue=this.queue.filter(item=>item.kind!=='goal'&&!item.scoreAnnouncement);
+   if(this.composing&&(this.composing.item.kind==='goal'||this.composing.item.scoreAnnouncement))this.cancelComposition();
+   this.lastEvent=null;clearTimeout(this.scoreTimer);this.scoreTimer=null;
+  }
   if(fresh.some(e=>this.eventSpeech(e))||scoreChanged||ended){this.interruptAnalysis();this.lastCommentAt=Date.now();}
-  if((fresh.some(e=>this.eventKind(e)==='goal')||scoreChanged)&&this.utterance&&this.utteranceKind!=='goal'){this.utterance=null;this.synth.cancel();}
-  for(const event of fresh.reverse().sort((a,b)=>Number(this.eventKind(b)==='goal')-Number(this.eventKind(a)==='goal'))) {
+  for(const event of fresh) {
    if(ended&&/^Fim do (?:tempo|segundo)/i.test(event.text||''))continue;
+   const key=this.eventKey(event);
+   const sameQueued=this.queue.some(item=>item.eventKey===key);
+   const sameCurrent=this.currentItem?.eventKey===key;
+   const sameLast=this.lastEvent && this.eventKey(this.lastEvent)===key;
+   if(sameQueued||sameCurrent||sameLast)continue;
    const text=this.eventSpeech(event);
-   if(text){const kind=this.eventKind(event);this.enqueue(text,kind,{eventKey:this.eventKey(event),editorial:!!event.editorial,source:event.source});if(kind==='goal')this.goalCount++;}
+   if(text){
+    const kind=this.eventKind(event);
+    this.seen.add(key);
+    this.enqueue(text,kind,{eventKey:key,editorial:!!event.editorial,source:event.source,urgent:['cancelled','correction','review'].includes(kind)});
+    if(kind==='goal')this.goalCount++;
+   }
   }
   if(scoreChanged||goal||ended) {
    clearTimeout(this.scoreTimer);this.scoreTimer=null;
    const validScore=[s.home?.score,s.away?.score].every(n=>n!=null&&Number.isFinite(Number(n)));
-   if(ended){this.lineupQueue=[];this.finishAfterDrain=true;this.enqueue('Partida encerrada.'+(validScore?' Placar final. '+this.scoreboard(s):''));}
+   if(ended){this.lineupQueue=[];this.finishAfterDrain=true;if(this.stageScripts)this.readStage(s);else this.enqueue('Partida encerrada.'+(validScore?' Placar final. '+this.scoreboard(s):''));}
    else if(validScore&&(scoreChanged||goal)) {
     // Manual goals can arrive in two consecutive WebSocket messages: score, then event.
-    this.scoreTimer=setTimeout(()=>{this.scoreTimer=null;if(this.enabled)this.enqueue('Placar atualizado. '+this.scoreboard(s));},1000);
+    this.scoreTimer=setTimeout(()=>{this.scoreTimer=null;if(this.enabled)this.enqueue((scoreReduced?'Correção do placar informada pela fonte. ':'Placar atualizado. ')+this.scoreboard(s),'event',{scoreAnnouncement:true,urgent:scoreReduced});},1000);
    }
   }
-  if(s.status==='INTERVALO'&&this.lastStatus!=='INTERVALO'&&!fresh.some(e=>/intervalo/i.test(e.text||'')))this.enqueue('Intervalo da partida. '+this.scoreboard(s));
+  if(s.status==='INTERVALO'&&this.lastStatus!=='INTERVALO'){if(this.stageScripts)this.readStage(s);else if(!fresh.some(e=>/intervalo/i.test(e.text||'')))this.enqueue('Intervalo da partida. '+this.scoreboard(s));}
+  if(this.lastStatus==='INTERVALO'&&s.status!=='INTERVALO'&&s.phase==='in'&&!fresh.some(e=>/segundo tempo|começou o segundo|retornou/i.test(e.text||''))){
+   this.enqueue('Segundo tempo em andamento. '+this.scoreboard(s),'event',{scoreAnnouncement:true,urgent:false});
+  }
   this.scheduleLineups(s);this.tick(s);
   this.lastScore=this.score(s);this.lastPhase=s.phase;this.lastStatus=s.status;
  }

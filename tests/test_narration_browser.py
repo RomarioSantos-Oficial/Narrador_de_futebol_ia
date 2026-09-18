@@ -93,6 +93,31 @@ class NarrationTests(unittest.TestCase):
         self.assertFalse(any('Histórico antigo' in x or 'outra fonte' in x for x in result))
         self.assertTrue(any('Atualização do lance' in x for x in result))
 
+    def test_ge_editorial_events_have_queue_priority_over_regular_events(self):
+        result = self.page.evaluate("""() => {
+            narrator.configure({voice:{lang:'pt-BR',localService:true},style:'radio',commentaryInterval:0});
+            const normal = narrator.queuePriority({kind:'event',eventKey:'regular',text:'Lance normal'});
+            const ge = narrator.queuePriority({kind:'event',editorial:true,eventKey:'ge',source:{name:'ge · tempo real'},text:'Lens chega bem pela direita'});
+            return {normal,ge,prioritized:ge>normal};
+        }""")
+        self.assertTrue(result['prioritized'])
+        self.assertGreater(result['ge'], result['normal'])
+
+    def test_same_live_event_is_not_spoken_twice_when_source_refreshes_id(self):
+        result = self.page.evaluate("""() => {
+            narrator.configure({voice:{lang:'pt-BR',localService:true},style:'events',commentaryInterval:0});
+            narrator.start(state);drain();
+            state.events=[{id:101,minute:'26',icon:'⚽',text:'Gol. Raphinha'}];
+            narrator.update(state);drain();
+            state.events=[{id:102,minute:'26',icon:'⚽',text:'Gol. Raphinha'}];
+            narrator.update(state);drain();
+            state.events=[{id:103,minute:'29',icon:'⚽',text:'Gol. João'}];
+            narrator.update(state);drain();
+            return spoken.map(x=>x.text);
+        }""")
+        self.assertEqual(sum('Gol. Raphinha' in x for x in result), 1)
+        self.assertEqual(sum('Gol. João' in x for x in result), 1)
+
     def test_skip_lineups_and_optional_engagement_yield_to_events(self):
         self.page.evaluate("""() => {
             narrator.configure({voice:{lang:'pt-BR',localService:true},style:'radio',commentaryInterval:0,engagement:true,engagementInterval:300});
@@ -119,6 +144,16 @@ class NarrationTests(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertNotIn('antigo', ' '.join(result))
         self.assertIn('João', result[-1])
+
+    def test_start_replays_recent_in_play_events(self):
+        result = self.page.evaluate("""() => {
+            state.phase='in';state.minute='45';
+            state.events=[{minute:'44',icon:'⚽',text:'Gol. Bruno'}];
+            narrator.start(state);drain();
+            return spoken.map(u=>u.text);
+        }""")
+        self.assertTrue(any('Gol. Bruno' in x for x in result))
+        self.assertTrue(any('Bruno' in x for x in result))
 
     def test_stop_cancels_queue_and_pending_score(self):
         self.page.evaluate("""() => {
@@ -217,6 +252,20 @@ class NarrationTests(unittest.TestCase):
         self.assertNotIn('No gol', result['text'])
         self.assertNotIn('posse', result['text'])
         self.assertIn('mais 2 de acréscimo', result['clock'])
+
+    def test_radio_panorama_can_repeat_as_periodic_commentary(self):
+        result = self.page.evaluate("""() => {
+            narrator.configure({voice:{lang:'pt-BR',localService:true},style:'radio',commentaryInterval:60,volume:0});
+            narrator.start(state);drain();
+            state.updated_at=new Date().toISOString();
+            state.minute='28';
+            state.stats={};
+            narrator.lastCommentAt=Date.now()-61000;
+            narrator.analysisCycle=0;
+            narrator.tick(state);
+            return narrator.queue.at(-1)?.text || '';
+        }""")
+        self.assertTrue('acompanha' in result.lower() or 'última atualização' in result.lower())
 
     def test_goal_interrupts_panorama_and_late_audio_callback_cannot_advance_queue(self):
         self.radio_start()

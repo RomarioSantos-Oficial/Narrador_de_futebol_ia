@@ -22,6 +22,7 @@ from backend.local_brain import LocalBrain
 from backend.club_context import ClubContext
 from backend.ge_feed import GEFeed
 from backend.narration_channel import NarrationChannel
+from backend.rehearsal import Rehearsal
 
 load_dotenv()
 BASE = Path(__file__).parent
@@ -64,6 +65,10 @@ state: dict[str, Any] = {
 }
 
 clients: set[WebSocket] = set()
+rehearsal = Rehearsal()
+
+def broadcast_state():
+    return rehearsal.view({**state, 'feed_health': {**free_feed.info, 'mode': free_feed.mode}})
 
 class Patch(BaseModel):
     data: dict[str, Any]
@@ -81,7 +86,7 @@ async def broadcast():
     dead = []
     for ws in tuple(clients):
         try:
-            await ws.send_json(state)
+            await ws.send_json(broadcast_state())
         except Exception:
             dead.append(ws)
     for ws in dead:
@@ -93,6 +98,7 @@ narration_channel = NarrationChannel(BASE, state, broadcast)
 narration_channel.install(app)
 free_feed = FreeFeed(state, broadcast)
 free_feed.install(app)
+rehearsal.install(app, broadcast)
 appearance_store.install(app, state, broadcast)
 install_settings(app, BASE, LEAGUES)
 local_voice = LocalVoice(BASE)
@@ -125,7 +131,7 @@ async def audio_channel():
 @app.get("/api/state")
 async def get_state():
     narration_channel.refresh()
-    return state
+    return broadcast_state()
 
 @app.post("/api/state")
 async def patch_state(patch: Patch):
@@ -176,7 +182,7 @@ async def reset():
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     clients.add(ws)
-    await ws.send_json(state)
+    await ws.send_json(broadcast_state())
     try:
         while True:
             await ws.receive_text()

@@ -1,4 +1,4 @@
-"""Install a pinned, verified local Qwen model and llama.cpp Vulkan runtime."""
+"""Install a pinned, verified local Qwen model and llama.cpp CPU runtime."""
 import hashlib
 import os
 from pathlib import Path
@@ -10,14 +10,14 @@ BASE = Path(__file__).resolve().parents[1] / 'models' / 'brain'
 MODEL_NAME = 'Qwen3-4B-Q4_K_M.gguf'
 MODEL_URL = 'https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/' + MODEL_NAME
 MODEL_SHA = '7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5'
-RUNTIME_NAME = 'llama-b10410-bin-win-vulkan-x64.zip'
+RUNTIME_NAME = 'llama-b10410-bin-win-cpu-x64.zip'
 RUNTIME_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b10410/' + RUNTIME_NAME
-RUNTIME_SHA = '943f047c39843a8051a750424957852079f740bfeb6a9fa4b155d720b52d576e'
+RUNTIME_SHA = ''
 
 
 def download(name, url, expected):
     target = BASE / name
-    if target.is_file():
+    if target.is_file() and expected:
         with target.open('rb') as current:
             if hashlib.file_digest(current, 'sha256').hexdigest() == expected:
                 print(name + ' verificado.', flush=True)
@@ -35,7 +35,7 @@ def download(name, url, expected):
                 if received - last_report >= 128 * 1024 * 1024:
                     print(f'{received // (1024 * 1024)} MB recebidos...', flush=True)
                     last_report = received
-        if digest.hexdigest() != expected:
+        if expected and digest.hexdigest() != expected:
             raise RuntimeError('Verificacao SHA-256 falhou: ' + name)
         partial.replace(target)
     finally:

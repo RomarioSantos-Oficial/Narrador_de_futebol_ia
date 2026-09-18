@@ -5,7 +5,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class NarrationSettings(BaseModel):
@@ -17,6 +17,11 @@ class NarrationSettings(BaseModel):
     commentaryVoice: str = Field(default="kokoro:pf_dora", max_length=200)
     rate: float = Field(default=1, ge=.7, le=1.4)
     volume: float = Field(default=1, ge=0, le=1)
+    commentaryRate: float | None = Field(default=None, ge=.7, le=1.4)
+    commentaryVolume: float | None = Field(default=None, ge=0, le=1)
+    pronunciations: dict[str, str] = Field(default_factory=dict, max_length=100)
+    stageScripts: bool = True
+    eventGraphics: bool = True
     style: Literal["events", "radio"] = "radio"
     commentaryInterval: Literal[0, 30, 60, 90, 120] = 0
     delivery: Literal["natural", "dynamic"] = "dynamic"
@@ -26,16 +31,39 @@ class NarrationSettings(BaseModel):
     engagement: bool = True
     engagementInterval: Literal[300, 600, 900] = 600
 
+    @field_validator('pronunciations')
+    @classmethod
+    def validate_pronunciations(cls, value):
+        clean = {}
+        for name, spoken in value.items():
+            name, spoken = name.strip(), spoken.strip()
+            if not name or not spoken or max(len(name), len(spoken)) > 100 or any(c in name + spoken for c in '\n\r\t'):
+                raise ValueError('Use nomes e pronúncias de 1 a 100 caracteres, em uma linha.')
+            if name.casefold() in {key.casefold() for key in clean}:
+                raise ValueError('Nome repetido no dicionário.')
+            clean[name] = spoken
+        return clean
+
+
+class QueueItem(BaseModel):
+    text: str = Field(max_length=900)
+    kind: str = Field(max_length=30)
+    role: str = Field(max_length=30)
+    label: str = Field(default='', max_length=80)
+
 
 class LeaseRequest(BaseModel):
     client: str = Field(min_length=16, max_length=80, pattern=r"^[a-zA-Z0-9-]+$")
     output: Literal["control", "obs"]
     status: str = Field(default="", max_length=250)
     text: str = Field(default="", max_length=1800)
+    queue: list[QueueItem] = Field(default_factory=list, max_length=40)
+    current: QueueItem | None = None
+    can_repeat: bool = False
 
 
 class ChannelCommand(BaseModel):
-    action: Literal["lineups", "skip_lineups", "panorama"]
+    action: Literal["lineups", "skip_lineups", "panorama", "skip", "repeat", "stage"]
 
 
 class NarrationChannel:
@@ -60,7 +88,10 @@ class NarrationChannel:
         if granted:
             self.owner, self.expiry = payload.client, now + self.TTL
             self.state["narration_playback"] = {"connected": True, "output": payload.output,
-                                                 "status": payload.status, "text": payload.text}
+                "status": payload.status, "text": payload.text,
+                "queue": [item.model_dump() for item in payload.queue],
+                "current": payload.current.model_dump() if payload.current else None,
+                "can_repeat": payload.can_repeat}
         return {"granted": granted, "ttl": self.TTL, "settings": self.settings.model_dump()}
 
     def refresh(self):

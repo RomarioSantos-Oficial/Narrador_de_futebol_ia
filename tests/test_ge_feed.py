@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import tempfile
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from backend.ge_feed import GEFeed, agenda_games, matches, event_from_play
 from backend.narration_channel import NarrationChannel, LeaseRequest
+from tools.inspect_ge import parse_page
 
 
 def play(text="O time avança pelo lado esquerdo.", **overrides):
@@ -68,7 +70,53 @@ class GEParsingTests(unittest.TestCase):
         events = feed.snapshot_events([stale], 'url', events, False)
         self.assertNotIn("ge:one", events)
         initial = feed.snapshot_events([current], 'url', {}, True)
-        self.assertFalse(initial['ge:one']['speak'])
+        self.assertTrue(initial['ge:one']['speak'])
+        stale_initial = feed.snapshot_events([stale], 'url', {}, True)
+        self.assertFalse(stale_initial['ge:two']['speak'])
+
+    def test_parse_page_accepts_null_optional_sections(self):
+        html = '''
+        <script>
+        window.trv2 = {
+          transmission: {"match":{"id":123,"homeTeam":{"popularName":"CRB"},"awayTeam":{"popularName":"Sport"}}},
+          statistics: null,
+          plays: [{"id": "play-1", "createdAt": "2026-09-16T00:20:00Z", "moment": "18:01", "playType": {"id": "NORMAL"}, "period": {"abbreviation": "1T"}, "body": {"blocks": [{"type": "unstyled", "text": "Gol do CRB"}]}}],
+          matchHistory: null,
+          theSportsField: {"url": "https://field.example/track"}
+        };
+        </script>
+        '''
+        snapshot = parse_page(html)
+        self.assertEqual(snapshot['transmission']['match']['id'], 123)
+        self.assertIsNone(snapshot['statistics'])
+        self.assertIsNone(snapshot['matchHistory'])
+        self.assertEqual(snapshot['events'][0]['text'], 'Gol do CRB')
+
+    def test_publish_updates_root_timestamp_for_radio_commentary(self):
+        async def run():
+            state = {'home': {'name': 'CRB'}, 'away': {'name': 'Sport Recife'}}
+            async def broadcast():
+                pass
+            feed = GEFeed(state, broadcast)
+            feed.generation = 1
+            await feed.publish(1, ready=True, events=[], status='OK')
+            self.assertIn('updated_at', state)
+            self.assertIn('updated_at', state['ge'])
+        asyncio.run(run())
+
+    def test_recent_or_updated_events_are_spoken_even_if_session_started_later(self):
+        feed = GEFeed({}, None)
+        feed.started_at = datetime.now(timezone.utc)
+        current = play(createdAt=(datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat())
+        events = feed.snapshot_events([current], 'url', {}, False)
+        self.assertTrue(events['ge:one']['speak'])
+
+    def test_live_textual_event_without_created_at_is_still_speaking(self):
+        feed = GEFeed({}, None)
+        current = play(createdAt=None, moment='24:00', text='AH! Zakaria desperdiça bom ataque do Monaco, ao demorar demais para tocar a bola.')
+        events = feed.snapshot_events([current], 'url', {}, False)
+        self.assertTrue(events['ge:one']['speak'])
+        self.assertEqual(events['ge:one']['minute'], '24')
 
 
 class NarrationChannelTests(unittest.TestCase):

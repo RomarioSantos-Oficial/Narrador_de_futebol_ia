@@ -63,6 +63,23 @@ class RadioCommentary {
   this.reset(s);
   return `${intro} ${moment} ${this.score(s)}${numbers?' '+numbers:''}`;
  }
+ stage(s){
+  const phase=s.phase==='post'?'post':s.status==='INTERVALO'?'half':s.phase==='pre'?'pre':'live';
+  const intro={pre:`Começa nossa cobertura de ${s.home.name} e ${s.away.name}${s.competition?' pela '+s.competition:''}.`,half:'Intervalo da partida. Vamos ao balanço do primeiro tempo.',post:'Partida encerrada. Vamos ao balanço final.',live:'Vamos ao panorama da partida.'}[phase];
+  const parts=[intro+(phase==='pre'?'':` ${this.score(s)}`)];
+  if(phase==='pre'){
+   if(s.venue)parts.push(`O palco informado para o jogo é ${s.venue}.`);
+   for(const side of ['home','away']){
+    const coach=s.lineups?.[side]?.coach;
+    const name=typeof coach==='string'?coach:coach?.name;
+    if(name)parts.push(`${s[side].name} tem no comando ${name}.`);
+    const table=s.standings?.[side];
+    if(table?.rank&&table.points!=null)parts.push(`Na tabela informada do campeonato, ${s[side].name} ocupa a posição ${table.rank}, com ${table.points} pontos.`);
+   }
+  }else parts.push(...this.candidates(s).slice(0,3).map(c=>c.text));
+  if(phase==='post')parts.push('Obrigado pela companhia nesta transmissão. Até a próxima partida!');
+  return parts;
+ }
  fresh(s){
   if(s.phase!=='in'||s.status==='INTERVALO'||s.source==='manual')return false;
   const received=Date.parse(s.updated_at);

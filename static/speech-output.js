@@ -3,6 +3,18 @@ class NarrationUtterance {constructor(text){this.text=text;}}
 class SpeechOutput {
  constructor({native=window.speechSynthesis,fetcher=window.fetch.bind(window)}={}){
   this.native=native;this.fetcher=fetcher;this.localVoices=[];this.token=0;this.current=null;
+  this.context=null;this.gestureBound=false;
+  this.bindGestureResume();
+ }
+ bindGestureResume(){
+  if(this.gestureBound||!document||!window) return;
+  this.gestureBound=true;
+  const resume=()=>{
+   if(this.context&&this.context.state==='suspended'){
+    this.context.resume().catch(()=>{});
+   }
+  };
+  ['pointerdown','touchstart','keydown','click'].forEach(type=>document.addEventListener(type,resume,{once:false,passive:true}));
  }
  async load(){
   try{
@@ -18,8 +30,15 @@ class SpeechOutput {
  isLocalAI(voice){return ['piper','kokoro'].includes(voice?.engine);}
  async unlock(voice){
   if(!this.isLocalAI(voice))return;
-  if(!this.context)this.context=new AudioContext();
-  if(this.context.state==='suspended')await this.context.resume();
+  if(!this.context){
+   const AudioCtor=window.AudioContext||window.webkitAudioContext;
+   if(!AudioCtor)throw new Error('Seu navegador não suporta áudio local para narração.');
+   this.context=new AudioCtor();
+  }
+  if(this.context.state==='suspended'){
+   try{await this.context.resume();}
+   catch{throw Object.assign(new Error('Clique na página para autorizar o áudio antes de iniciar a narração.'),{speechCode:'not-allowed'});}
+  }
  }
  cancel(){
   this.token++;
@@ -44,10 +63,20 @@ class SpeechOutput {
   const controller=new AbortController();this.controller=controller;
   const deadline=setTimeout(()=>controller.abort(),45000);
   try{
-   if(!this.context||this.context.state!=='running')throw Object.assign(new Error(),{speechCode:'not-allowed'});
+   if(!this.context){
+    const AudioCtor=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtor)throw Object.assign(new Error('Seu navegador não suporta áudio local.'),{speechCode:'not-allowed'});
+    this.context=new AudioCtor();
+   }
+   if(this.context.state==='suspended'){
+    try{await this.context.resume();}
+    catch{throw Object.assign(new Error('Clique na página para autorizar o áudio do navegador.'),{speechCode:'not-allowed'});}
+   }
+   if(this.context.state!=='running')throw Object.assign(new Error('Clique na página para autorizar o áudio do navegador.'),{speechCode:'not-allowed'});
    let response;
    const payload={text:utterance.text,rate:utterance.rate};
-   if(utterance.voice.apiVersion>=2)Object.assign(payload,{voice:utterance.voice.voiceURI,delivery:utterance.delivery||'natural',kind:utterance.kind||'event'});
+   const kind=['event','analysis','goal','card','substitution','review','cancelled','correction'].includes(utterance.kind)?utterance.kind:'event';
+   if(utterance.voice.apiVersion>=2)Object.assign(payload,{voice:utterance.voice.voiceURI,delivery:utterance.delivery||'natural',kind});
    utterance.onwaiting?.('Gerando a voz…');
    // New servers wait for the previous inference. Back off for older servers or an overloaded queue.
    for(let attempt=0;attempt<6;attempt++){

@@ -147,6 +147,9 @@ def normalize(data, league):
             minute_text = minute_text or "0"
         text, original = event_text(event, text)
         result["events"].append({"minute": minute_text or '—', "icon": icon, "text": text, "text_en": original,
+                                 "id": 'espn:' + str(event['id']) if event.get('id') else None,
+                                 "player": player_name, "team": team_name,
+                                 "side": next((side for side in ('home', 'away') if str(competitors[side]['team']['id']) == str(event.get('team', {}).get('id', ''))), None),
                                  "players": [{'id': str(p.get('athlete', {}).get('id', '')), 'name': p.get('athlete', {}).get('displayName', '')} for p in participants]})
     # Card events supplement player statistics when a provider omits the latter.
     for side in ("home", "away"):
@@ -231,12 +234,15 @@ class FreeFeed:
                         break
                 except HTTPException as exc:
                     self.info["error"] = exc.detail
+                    await self.broadcast()
                     if exc.status_code in (401, 403, 429):
                         break
                 except Exception:
                     self.info["error"] = f"Falha na atualização. Nova tentativa em {self.info['interval']} segundos."
+                    await self.broadcast()
         finally:
             self.info["active"] = False
+            await self.broadcast()
 
     def install(self, app):
         @app.post('/api/feed/options')
@@ -280,11 +286,13 @@ class FreeFeed:
             self.info["active"] = not completed and self.info['interval'] > 0
             if self.info['active']:
                 self.task = asyncio.create_task(self.loop(selection))
+            await self.broadcast()
             return self.info
 
         @app.post("/api/free/stop")
         async def stop():
             await self.stop()
+            await self.broadcast()
             return self.info
 
         app.add_event_handler("shutdown", self.stop)

@@ -43,6 +43,10 @@ def parse_page(html):
                 raise ValueError(f"Campo obrigatório ausente: {key}.")
             return None
         value, _ = json.JSONDecoder().raw_decode(block[match.end():])
+        if value is None:
+            if required:
+                raise ValueError(f"Campo obrigatório nulo: {key}.")
+            return None
         if not isinstance(value, expected):
             raise ValueError(f"Formato inesperado em {key}.")
         return value

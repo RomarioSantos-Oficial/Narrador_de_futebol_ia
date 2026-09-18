@@ -44,6 +44,25 @@ def stadium_facts(row):
              'source': {'name': 'TheSportsDB', 'url': 'https://www.thesportsdb.com/venue/' + str(row['idVenue'])}}]
 
 
+def format_player_profile(player_name, birthday_text, nationality, number=None):
+    intro = f'Olho no lance com {player_name}!'
+    chunks = []
+    if birthday_text:
+        chunks.append(f'Nascido em {birthday_text}')
+    if nationality:
+        chunks.append(f'na {nationality}')
+    if number:
+        chunks.append(f'o camisa {number}')
+    if not chunks:
+        text = f'{intro} Uma peça importante no time, com qualidade, leitura de jogo e presença no setor.'
+    else:
+        lead = ', '.join(chunks)
+        text = f'{intro} {lead}, traz categoria, visão de jogo e presença no setor. É bola no pé e qualidade pura!'
+    if len(text) > 350:
+        text = text[:347].rsplit(' ', 1)[0] + '...'
+    return text
+
+
 def player_facts(rows, lineup, side, source, team_id):
     result = []
     roster = [row for row in rows or [] if row.get('strSport') == 'Soccer' and str(row.get('idTeam')) == str(team_id)]
@@ -58,18 +77,18 @@ def player_facts(rows, lineup, side, source, team_id):
             if len(matches) != 1 or not str(matches[0].get('idPlayer', '')).isdigit():
                 continue
             row = matches[0]
-            details = []
+            birthday_text = ''
             try:
                 birthday = datetime.strptime(row.get('dateBorn', ''), '%Y-%m-%d')
                 if 1940 <= birthday.year <= datetime.now().year - 12:
-                    details.append(f'nasceu em {birthday.day} de {MONTHS[birthday.month - 1]} de {birthday.year}')
+                    birthday_text = f'{birthday.day} de {MONTHS[birthday.month - 1]} de {birthday.year}'
             except (TypeError, ValueError):
                 pass
             country = COUNTRIES.get(row.get('strNationality'))
-            if country:
-                details.append('tem ' + country + ' como país de nacionalidade no cadastro')
-            if details:
-                result.append({'id': 'player:' + row['idPlayer'], 'text': f"Sobre {player['name']}: " + ' e '.join(details) + '.',
+            number = player.get('number') or player.get('shirt_number') or player.get('camisa') or player.get('jersey')
+            if birthday_text or country or number:
+                result.append({'id': 'player:' + row['idPlayer'],
+                               'text': format_player_profile(player['name'], birthday_text, country, number),
                                'side': side, 'player_id': str(player.get('id', '')), 'player_name': player['name'],
                                'source': {'name': 'TheSportsDB', 'url': 'https://www.thesportsdb.com/player/' + row['idPlayer']}})
     managers = [row for row in roster if row.get('strPosition') == 'Manager' and row.get('strPlayer')]

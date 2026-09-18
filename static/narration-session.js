@@ -7,7 +7,8 @@ class NarrationSession {
   this.speech.canSpeak=()=>this.ownsAudio();
   this.narrator=new MatchNarrator({synth:this.speech,Utterance:NarrationUtterance,
    compose:(item,state,signal)=>this.brain.compose(item,state,signal),
-   onChange:status=>{this.status=status;onChange(status);}});
+   onChange:status=>{const changed=JSON.stringify(this.status)!==JSON.stringify(status);this.status=status;onChange(status);
+    if(changed&&this.ownsAudio()&&!this.statusTimer)this.statusTimer=setTimeout(()=>{this.statusTimer=null;this.renew();},150);}});
   this.timer=setInterval(async()=>{await this.renew();this.maintain().catch(e=>this.fail(e.message));this.refreshContext();},2000);
   this.tickTimer=setInterval(()=>this.narrator.tick(),1000);
   addEventListener('pagehide',()=>this.close());
@@ -55,7 +56,8 @@ class NarrationSession {
   if(this.narrator.enabled&&this.settings.paused!==this.narrator.paused)this.narrator.toggleHost(state);
   if(this.lastMatch&&this.lastMatch!==this.narrator.identity(state)&&!this.narrator.enabled)this.started=false;
   this.lastMatch=this.narrator.identity(state);
-  this.narrator.update(state);
+  if(state.rehearsal?.disconnected){if(!this.feedDisconnected){this.feedDisconnected=true;this.narrator.disconnect();}}
+  else{this.feedDisconnected=false;this.narrator.update(state);}
   const command=state.narration_command;
   if(command&&this.command!==undefined&&this.command!==command.id){
    this.pendingCommand={...command,match:this.lastMatch,expires:Date.now()+15000};
@@ -75,6 +77,9 @@ class NarrationSession {
    if(command.action==='lineups')this.narrator.readLineups(this.state);
    else if(command.action==='skip_lineups')this.narrator.skipLineups();
    else if(command.action==='panorama')this.narrator.panorama(this.state);
+   else if(command.action==='skip')this.narrator.skip();
+   else if(command.action==='repeat')this.narrator.repeat(this.state);
+   else if(command.action==='stage')this.narrator.readStage(this.state);
   }catch(e){this.narrator.notify(e.message);}
  }
  async acquire(){
@@ -82,7 +87,8 @@ class NarrationSession {
   const timer=setTimeout(()=>controller.abort(),2500);
   try{
    const response=await fetch('/api/narration/lease',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,
-    body:JSON.stringify({client:this.client,output:this.output,status:this.status?.status||'',text:this.status?.lastText||''})});
+    body:JSON.stringify({client:this.client,output:this.output,status:this.status?.status||'',text:this.status?.lastText||'',
+     current:this.status?.current||null,queue:this.status?.queue||[],can_repeat:!!this.status?.can_repeat})});
    if(!response.ok)throw new Error('Não foi possível reservar a saída de áudio.');
    const body=await response.json();
    if(!body.granted){this.lose('Outra página está usando o canal de áudio.');return false;}
@@ -130,7 +136,7 @@ class NarrationSession {
   }finally{this.previewRequested=false;}
  }
  async refreshContext(){
-  if(!this.settings?.curiosities||!this.state||!this.narrator.enabled)return;
+  if(!this.settings?.curiosities||!this.state||this.state.rehearsal?.active||!this.narrator.enabled)return;
   const key=this.narrator.identity(this.state)+JSON.stringify(this.state.lineups||{});
   if(key===this.contextKey&&Date.now()<this.contextNext)return;
   this.contextKey=key;this.contextNext=Date.now()+300000;
@@ -142,7 +148,7 @@ class NarrationSession {
   try{await this.request('/api/narration/release',{client:this.client,output:this.output});}catch{}
  }
  close(){
-  clearInterval(this.timer);clearInterval(this.tickTimer);this.lose();
+  clearInterval(this.timer);clearInterval(this.tickTimer);clearTimeout(this.statusTimer);this.lose();
   navigator.sendBeacon('/api/narration/release',new Blob([JSON.stringify({client:this.client,output:this.output})],{type:'application/json'}));
  }
 }

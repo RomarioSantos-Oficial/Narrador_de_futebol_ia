@@ -68,3 +68,17 @@ class BrainAsyncTests(unittest.IsolatedAsyncioTestCase):
             child.wait.assert_called_once_with(timeout=8)
             await brain.stop()
             self.assertEqual(child.terminate.call_count, 1)
+
+    def test_cpu_runtime_is_detected_when_vulkan_is_absent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            model_dir = base / 'models' / 'brain'
+            model_dir.mkdir(parents=True)
+            (model_dir / 'Qwen3-4B-Q4_K_M.gguf').write_bytes(b'fake-model')
+            runtime_dir = model_dir / 'runtime' / 'llama-b10410-bin-win-cpu-x64'
+            runtime_dir.mkdir(parents=True)
+            (runtime_dir / 'llama-server.exe').write_bytes(b'fake-exe')
+            brain = LocalBrain(base)
+            self.assertTrue(brain.model.is_file())
+            self.assertTrue(brain.executable.is_file())
+            self.assertEqual(brain.executable.name, 'llama-server.exe')

@@ -145,6 +145,10 @@ class GEFeed:
     async def publish(self, generation, **values):
         if generation != self.generation:
             return
+        if "updated_at" not in values:
+            values["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.state["updated_at"] = values["updated_at"]
+        self.state.setdefault("ge", {})
         self.state["ge"].update(values)
         await self.broadcast()
 
@@ -209,11 +213,11 @@ class GEFeed:
             try:
                 created = instant(event["created_at"])
                 recent = -60 <= (datetime.now(timezone.utc)-created).total_seconds() <= 90
-                recent = recent and created >= self.started_at
             except (ValueError, TypeError, AttributeError):
-                recent = False
-            event.update(speak=not initial and changed and (bool(old) or recent),
-                         corrected=bool(old and changed), _play=play)
+                recent = bool(event.get("minute") and event["minute"] not in ("—", ""))
+            initial_recent = initial and recent and not previous
+            speak = initial_recent or (not initial and ((bool(old) and changed) or (not old and recent)))
+            event.update(speak=speak, corrected=bool(old and changed), _play=play)
             result[event["id"]] = event
         return result
 
