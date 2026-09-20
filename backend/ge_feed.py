@@ -204,20 +204,34 @@ class GEFeed:
 
     def snapshot_events(self, plays, url, previous, initial):
         result = {}
+        previous_times = []
+        for old_event in previous.values():
+            try:
+                previous_times.append(instant(old_event.get("created_at")))
+            except (ValueError, TypeError, AttributeError):
+                pass
+        newest_previous = max(previous_times, default=None)
         for play in plays:
             event = event_from_play(play, url)
             if not event:
                 continue
             old = previous.get(event["id"])
             changed = not old or old["revision"] != event["revision"]
+            advances_feed = False
             try:
                 created = instant(event["created_at"])
                 recent = -60 <= (datetime.now(timezone.utc)-created).total_seconds() <= 90
+                advances_feed = newest_previous is not None and created > newest_previous
             except (ValueError, TypeError, AttributeError):
                 recent = bool(event.get("minute") and event["minute"] not in ("—", ""))
             initial_recent = initial and recent and not previous
-            speak = initial_recent or (not initial and ((bool(old) and changed) or (not old and recent)))
-            event.update(speak=speak, corrected=bool(old and changed), _play=play)
+            # Eligibility belongs to the revision, not to a single polling cycle.
+            # Each audio client deduplicates what it has actually queued.
+            speak = initial_recent or (not initial and (
+                (bool(old) and (changed or old.get("speak", False)))
+                or (not old and (recent or advances_feed))))
+            corrected = bool(old and (changed or old.get("corrected", False)))
+            event.update(speak=speak, corrected=corrected, _play=play)
             result[event["id"]] = event
         return result
 

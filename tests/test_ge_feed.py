@@ -59,7 +59,7 @@ class GEParsingTests(unittest.TestCase):
         first = events["ge:one"]["revision"]
         self.assertTrue(events["ge:one"]["speak"])
         events = feed.snapshot_events([current], 'url', events, False)
-        self.assertFalse(events['ge:one']['speak'])
+        self.assertTrue(events['ge:one']['speak'])
         edited = {**current, 'body': play('A jogada foi corrigida.')['body']}
         events = feed.snapshot_events([edited], 'url', events, False)
         self.assertNotEqual(first, events["ge:one"]["revision"])
@@ -91,6 +91,31 @@ class GEParsingTests(unittest.TestCase):
         self.assertIsNone(snapshot['statistics'])
         self.assertIsNone(snapshot['matchHistory'])
         self.assertEqual(snapshot['events'][0]['text'], 'Gol do CRB')
+
+    def test_delayed_new_kickoff_is_eligible_but_older_history_is_not(self):
+        feed = GEFeed({}, None)
+        now = datetime.now(timezone.utc)
+        pregame = play(id='pregame', createdAt=(now-timedelta(minutes=7)).isoformat())
+        previous = feed.snapshot_events([pregame], 'url', {}, True)
+        kickoff = play('Começa o jogo!', id='kickoff', moment='00:00',
+                       createdAt=(now-timedelta(minutes=3)).isoformat())
+        history = play(id='history', createdAt=(now-timedelta(minutes=20)).isoformat())
+        events = feed.snapshot_events([kickoff, pregame, history], 'url', previous, False)
+        self.assertTrue(events['ge:kickoff']['speak'])
+        self.assertFalse(events['ge:history']['speak'])
+        refreshed = feed.snapshot_events([kickoff, pregame, history], 'url', events, False)
+        self.assertTrue(refreshed['ge:kickoff']['speak'])
+        self.assertEqual(refreshed['ge:kickoff']['revision'], events['ge:kickoff']['revision'])
+
+    def test_correction_remains_available_after_next_poll(self):
+        feed = GEFeed({}, None)
+        original = play(createdAt=datetime.now(timezone.utc).isoformat())
+        previous = feed.snapshot_events([original], 'url', {}, True)
+        corrected = {**original, 'body': play('Correção do lance.')['body']}
+        events = feed.snapshot_events([corrected], 'url', previous, False)
+        refreshed = feed.snapshot_events([corrected], 'url', events, False)
+        self.assertTrue(refreshed['ge:one']['speak'])
+        self.assertTrue(refreshed['ge:one']['corrected'])
 
     def test_publish_updates_root_timestamp_for_radio_commentary(self):
         async def run():

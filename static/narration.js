@@ -141,7 +141,13 @@ class MatchNarrator {
   return Number(match[1])+Number(match[2]||0);
  }
  recentInPlayEvent(event,s,minutes=8){
-  if(s.phase!=='in'||!event||event.speak===false)return false;
+  if(!event||event.speak===false||s.phase==='post')return false;
+  // GE may report kickoff before the primary provider leaves pre-game.
+  if(event.editorial&&event.speak===true&&event.created_at){
+   const age=Date.now()-Date.parse(event.created_at);
+   if(Number.isFinite(age)&&age>=-60000&&age<=minutes*60000)return true;
+  }
+  if(s.phase!=='in')return false;
   const eventMinute=this.eventMinuteValue(event.minute);
   const nowMinute=this.eventMinuteValue(s.minute ?? s.clock_display ?? s.updated_at ?? '');
   if(eventMinute==null)return false;
@@ -228,7 +234,7 @@ class MatchNarrator {
  }
  pump() {
   if(this.utterance||this.composing||this.paused||(!this.enabled&&!this.previewing))return;
-  this.queue=this.queue.filter(item=>Date.now()-item.created<45000);
+  this.queue=this.queue.filter(item=>item.eventKey||Date.now()-item.created<45000);
   this.sortQueue();
   const item=this.queue.shift()||(!this.scoreTimer?this.lineupQueue.shift():null);
   if(!item){if(this.finishAfterDrain){this.stop('Partida encerrada. Fila e áudios liberados.');return;}this.previewing=false;this.notify(this.enabled?'Aguardando novos lances.':'Teste de voz concluído.');return;}
@@ -238,7 +244,7 @@ class MatchNarrator {
    Promise.resolve().then(()=>this.compose(item,this.currentState,pending.controller.signal)).then(text=>{
     if(this.composing!==pending)return;
     this.composing=null;
-    if(Date.now()-item.created>=45000){this.pump();return;}
+    if(!item.eventKey&&Date.now()-item.created>=45000){this.pump();return;}
     this.speakItem({...item,text:typeof text==='string'&&text.trim()?text.slice(0,900):item.text});
    }).catch(()=>{if(this.composing!==pending)return;this.composing=null;this.speakItem(item);});
    return;
@@ -455,9 +461,7 @@ class MatchNarrator {
   const feedChanged=this.lastFeed!==this.feedKey(s);
   if(feedChanged){
    this.lastFeed=this.feedKey(s);const liveHistory=this.events(s).filter(e=>!this.recentInPlayEvent(e,s,8));
-   this.seen=new Set(liveHistory.map(e=>this.eventKey(e)));
-   this.queue=this.queue.filter(item=>!item.eventKey||Date.now()-item.created<45000);
-   if(this.currentItem?.eventKey&&this.utterance){this.utterance=null;this.synth.cancel();}
+   for(const event of liveHistory)this.seen.add(this.eventKey(event));
   }
   const fresh=[];
   const available=new Set(this.events(s).map(e=>this.eventKey(e)));

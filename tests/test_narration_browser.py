@@ -103,6 +103,41 @@ class NarrationTests(unittest.TestCase):
         self.assertTrue(result['prioritized'])
         self.assertGreater(result['ge'], result['normal'])
 
+    def test_ge_kickoff_arriving_before_primary_phase_change_is_read_once(self):
+        result = self.page.evaluate("""() => {
+            state.phase='pre';state.minute=0;
+            narrator.start(state);drain();
+            state.ge={ready:true,session:'kickoff',events:[{
+                id:'ge:kickoff',revision:'1',minute:'0',period:'1T',
+                text:'Bola rolando. Começa o jogo!',editorial:true,speak:true,
+                created_at:new Date(Date.now()-180000).toISOString()
+            }]};
+            narrator.update(state);drain();
+            const beforePrimaryUpdate=spoken.filter(u=>u.text.includes('Bola rolando. Começa o jogo!')).length;
+            narrator.update(state);drain();
+            state.phase='in';narrator.update(state);drain();
+            state.ge.ready=false;narrator.update(state);drain();
+            state.ge.ready=true;narrator.update(state);drain();
+            return {beforePrimaryUpdate,texts:spoken.map(u=>u.text)};
+        }""")
+        self.assertEqual(result['beforePrimaryUpdate'], 1)
+        self.assertEqual(sum('Bola rolando. Começa o jogo!' in text for text in result['texts']), 1)
+
+    def test_ge_event_waiting_over_45_seconds_is_not_lost(self):
+        self.page.evaluate("""() => {
+            narrator.start(state);drain();
+            state.ge={ready:true,session:'match',events:[]};narrator.update(state);
+            narrator.enqueue('Fala atual');
+            state.ge.events=[{id:'ge:queued',revision:'1',minute:'0',
+                text:'Bola rolando. Começa o jogo!',editorial:true,speak:true}];
+            narrator.update(state);
+        }""")
+        self.page.clock.run_for(60000)
+        result = self.page.evaluate("""() => {
+            drain();narrator.update(state);drain();return spoken.map(u=>u.text);
+        }""")
+        self.assertEqual(sum('Bola rolando. Começa o jogo!' in text for text in result), 1)
+
     def test_live_ge_event_without_current_clock_is_not_marked_as_history(self):
         result = self.page.evaluate("""() => {
             narrator.configure({voice:{lang:'pt-BR',localService:true},style:'events',commentaryInterval:0});
