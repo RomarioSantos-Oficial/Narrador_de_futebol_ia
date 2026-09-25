@@ -16,7 +16,8 @@ from tools.inspect_ge import parse_page, validate_url
 from backend.ge_browser import GEPublicPage, GEAccessUnavailable
 
 BRASILIA = timezone(timedelta(hours=-3))
-ALIASES = {"sport recife": "sport", "sport club do recife": "sport",
+ALIASES = {"brazil": "brasil",
+           "sport recife": "sport", "sport club do recife": "sport",
            "rb bragantino": "bragantino", "red bull bragantino": "bragantino",
            "atletico mineiro": "atletico mg", "athletico paranaense": "athletico pr"}
 

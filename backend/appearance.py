@@ -12,7 +12,7 @@ class Appearance(BaseModel):
     background: Literal["transparent", "solid", "gradient", "image"] = "transparent"
     background_color: str = Field(default="#101c2c", pattern=r"^#[0-9a-fA-F]{6}$")
     background_image: str = ""
-    accent: str = Field(default="#38e8a0", pattern=r"^#[0-9a-fA-F]{6}$")
+    accent: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
     away_accent: str = Field(default="#72aaff", pattern=r"^#[0-9a-fA-F]{6}$")
     panel_opacity: float = Field(default=0.94, ge=0.3, le=1)
     image_dim: float = Field(default=0.35, ge=0, le=0.9)
@@ -26,7 +26,7 @@ class Appearance(BaseModel):
     home_logo: str = ""
     away_logo: str = ""
     channel_name: str = Field(default="FUTEBOL LIVE", max_length=50)
-    scene: Literal["match", "lineups", "bench", "table"] = "match"
+    scene: Literal["match", "lineups", "bench", "table", "formation"] = "match"
 
     @field_validator("background_image", "home_logo", "away_logo")
     @classmethod

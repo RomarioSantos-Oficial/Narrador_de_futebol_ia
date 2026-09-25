@@ -119,7 +119,13 @@ def normalize(data, league):
                       "number": entry.get("jersey", ""), "position": entry.get("position", {}).get("abbreviation", ""),
                       "yellow": count("yellowCards"), "red": count("redCards"),
                       "captain": bool(entry.get("captain") or entry.get("isCaptain")),
-                      "subbed_in": bool(entry.get("subbedIn")), "subbed_out": bool(entry.get("subbedOut"))}
+                      "subbed_in": bool(entry.get("subbedIn")), "subbed_out": bool(entry.get("subbedOut")),
+                      "formation_place": entry.get("formationPlace"),
+                      "replacement_id": str((entry.get("subbedOutFor") or {}).get("athlete", {}).get("id", "")),
+                      "photo": (athlete.get("headshot") or {}).get("href", ""),
+                      "match_stats": {key: player_stats[key] for key in
+                                      ("totalGoals", "goalAssists", "totalShots", "saves", "foulsCommitted")
+                                      if key in player_stats}}
             lineup["starters" if entry.get("starter") else "bench"].append(player)
     for event in data.get("keyEvents", []) or []:
         typ = event.get("type", {}).get("type", "")

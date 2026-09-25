@@ -1,8 +1,8 @@
 {
   "background": "transparent",
-  "background_color": "#101c2c",
+  "background_color": "#e3f207",
   "background_image": "",
-  "accent": "#1e4334",
+  "accent": "#f2ff38",
   "away_accent": "#72aaff",
   "panel_opacity": 0.94,
   "image_dim": 0.49,
@@ -16,5 +16,5 @@
   "home_logo": "",
   "away_logo": "",
   "channel_name": "FUTEBOL LIVE",
-  "scene": "match"
+  "scene": "formation"
 }

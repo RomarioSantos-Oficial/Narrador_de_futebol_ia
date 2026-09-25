@@ -23,13 +23,22 @@ from backend.club_context import ClubContext
 from backend.ge_feed import GEFeed
 from backend.narration_channel import NarrationChannel
 from backend.rehearsal import Rehearsal
+from backend.player_profiles import PlayerProfiles
 
 load_dotenv()
 BASE = Path(__file__).parent
 appearance_store = AppearanceStore(BASE)
 
 app = FastAPI(title="Futebol Live Overlay")
-app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
+
+class RevalidatedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+
+
+app.mount("/static", RevalidatedStaticFiles(directory=BASE / "static"), name="static")
 
 state: dict[str, Any] = {
     "competition": "TRANSMISSÃO AO VIVO",
@@ -107,6 +116,8 @@ local_brain = LocalBrain(BASE)
 local_brain.install(app)
 club_context = ClubContext()
 club_context.install(app, state)
+player_profiles = PlayerProfiles(state, broadcast)
+player_profiles.install(app)
 
 @app.get("/favicon.ico", include_in_schema=False, status_code=204)
 async def favicon():
@@ -122,7 +133,7 @@ async def control():
 
 @app.get("/overlay")
 async def overlay():
-    return FileResponse(BASE / "static" / "overlay.html")
+    return FileResponse(BASE / "static" / "overlay.html", headers={'Cache-Control': 'no-cache'})
 
 @app.get("/audio")
 async def audio_channel():

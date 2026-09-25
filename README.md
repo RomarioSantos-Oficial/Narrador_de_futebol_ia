@@ -43,6 +43,8 @@ Configurações locais: `.env` (chaves), `appearance.json` (visual) e `narration
 6. Tamanho recomendado: 1920 x 1080.
 7. Marque a opção de atualizar a fonte quando ela ficar ativa, se desejar.
 
+Para acompanhar amistosos de seleções, incluindo o Brasil quando houver cobertura, escolha **ESPN** e **Amistosos de seleções** na aba **Partida**. Use **Buscar ao vivo agora** ou escolha a data e clique em **Buscar jogos da data**; depois selecione a partida e clique em **Carregar e acompanhar**.
+
 ## Modo manual
 Funciona sem nenhuma API. Você controla:
 - times;
@@ -55,6 +57,16 @@ Funciona sem nenhuma API. Você controla:
 - cartões;
 - eventos;
 - posição visual da bola.
+
+## Formação, fotos e informações dos jogadores
+
+Na aba **05 · Formação**, o campo mostra os jogadores em atividade nas duas equipes. A disposição é aproximada, baseada na formação inicial e nas posições fornecidas pela ESPN; não é rastreamento ao vivo. Quando a fonte identifica quem substituiu quem, o novo jogador ocupa a vaga do anterior. Expulsos deixam o campo. Sem formação ou vínculo de substituição, os jogadores aparecem na lista **sem posição confirmada**.
+
+Use **Buscar fotos e informações** para consultar o TheSportsDB sem mudar a fonte da partida. A busca confere nome e clube ou nacionalidade, rejeita correspondências ambíguas e usa ícone neutro quando não encontra uma foto. As consultas são espaçadas e podem levar alguns minutos; o cache dura 24 horas durante a sessão do servidor. A disponibilidade depende do cadastro e dos limites do provedor.
+
+Clique em um jogador no painel para consultar posição, camisa, informações biográficas e estatísticas individuais disponíveis. Números e notas não fornecidos pela fonte não são inventados. Use **Exibir formação no OBS** para publicar o campo na mesma fonte `/overlay`; o botão **Partida** retorna ao visual normal. Após instalar esta atualização, reinicie `start.bat` e atualize o painel e a fonte OBS.
+
+Referência da integração de perfis: [documentação do TheSportsDB](https://www.thesportsdb.com/documentation).
 
 ## Teste gratuito automático (sem chave)
 

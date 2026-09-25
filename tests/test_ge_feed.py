@@ -35,6 +35,42 @@ class GEParsingTests(unittest.TestCase):
         wrong = {**self.primary, "kickoff": "2026-09-17T00:00:00Z"}
         self.assertFalse(matches(wrong, self.match))
 
+    def test_brazil_friendly_matches_page_and_agenda_without_relaxing_identity(self):
+        primary = {"home": {"name": "Australia"}, "away": {"name": "Brazil"},
+                   "kickoff": "2026-09-25T10:00:00Z"}
+        match = {"homeTeam": {"popularName": "Austrália"},
+                 "awayTeam": {"popularName": "Brasil"},
+                 "startDate": "2026-09-25", "startHour": "07:00:00"}
+        agenda = {**match, "firstContestant": match["homeTeam"],
+                  "secondContestant": match["awayTeam"]}
+        self.assertTrue(matches(primary, match))
+        self.assertTrue(matches(primary, agenda, agenda=True))
+        for wrong in (
+            {**primary, "away": {"name": "Brazil U20"}},
+            {**primary, "home": primary["away"], "away": primary["home"]},
+            {**primary, "kickoff": "2026-09-26T10:00:00Z"},
+        ):
+            self.assertFalse(matches(wrong, match))
+            self.assertFalse(matches(wrong, agenda, agenda=True))
+
+    def test_pregame_text_is_visible_and_new_updates_are_eligible_for_voice(self):
+        feed = GEFeed({}, None)
+        now = datetime.now(timezone.utc)
+        old = play("Bem-vindos!", id="welcome", moment=None,
+                   period={"abbreviation": "Pré-jogo"},
+                   createdAt=(now-timedelta(minutes=10)).isoformat())
+        previous = feed.snapshot_events([old], 'url', {}, True)
+        self.assertFalse(previous['ge:welcome']['speak'])
+        new = play("Titulares confirmados.", id="lineup", title="BRASIL ESCALADO!",
+                   moment=None, period={"abbreviation": "Pré-jogo"},
+                   createdAt=now.isoformat())
+        events = feed.snapshot_events([new, old], 'url', previous, False)
+        self.assertEqual(len(feed.sorted_events(events)), 2)
+        self.assertEqual(events['ge:lineup']['period'], 'Pré-jogo')
+        self.assertIn('BRASIL ESCALADO!', events['ge:lineup']['text'])
+        self.assertTrue(events['ge:lineup']['speak'])
+        self.assertFalse(events['ge:welcome']['speak'])
+
     def test_agenda_extracts_only_public_match_urls(self):
         match = {**self.match, "firstContestant": self.match["homeTeam"], "secondContestant": self.match["awayTeam"],
                  "transmission": {"url": "https://ge.globo.com/futebol/jogo/15-09-2026/crb-sport.ghtml"}}

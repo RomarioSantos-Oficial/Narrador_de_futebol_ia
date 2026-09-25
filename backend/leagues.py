@@ -59,6 +59,7 @@ LEAGUES = {
     'aus.1': 'Campeonato Australiano · A-League',
     'chn.1': 'Campeonato Chinês',
     'ksa.1': 'Campeonato Saudita',
+    'fifa.friendly': 'Amistosos de seleções',
     'fifa.world': 'Copa do Mundo',
     'uefa.euro': 'Eurocopa',
     'uefa.nations': 'Liga das Nações da UEFA',
