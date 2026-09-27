@@ -30,6 +30,7 @@ function updateLeagueTable(s){
 }
 setInterval(()=>{if(leagueScene==='table'&&leaguePages.length>1){leaguePage=(leaguePage+1)%leaguePages.length;drawLeagueTable()}},12000);
 function render(s){
+ s=pregameState(s);
  updateLeagueTable(s);
  const a=s.appearance||{};appearance(a);$('formationPanel').hidden=a.scene!=='formation';$('formationBenchPanel').hidden=a.scene!=='formation';$('stage').classList.toggle('formation-scene',a.scene==='formation');if(a.scene==='formation')renderFormation(s);
  $('competition').textContent=s.competition;$('homeName').textContent=s.home.name;$('awayName').textContent=s.away.name;$('homeScore').textContent=s.home.score;$('awayScore').textContent=s.away.score;
@@ -41,7 +42,7 @@ function render(s){
  const events=s.ge?.ready?s.ge.events||[]:s.events||[];
  $('events').innerHTML=events.length?events.slice(0,a.show_pitch?2:5).map(e=>`<div class="event"><span class="event-minute">${esc(e.minute)}${e.minute==='—'?'':'′'}</span><div><div class="event-text">${esc(e.icon)} ${esc(e.text)}</div>${e.editorial?'<small>Fonte: ge · tempo real</small>':''}${e.text_en?`<div class="event-english" lang="en">${esc(e.text_en)}</div>`:''}</div></div>`).join(''):'<p class="empty">Aguardando eventos da partida.</p>';
  $('overlayLineups').innerHTML=lineupHTML(s,a.scene==='bench'?'bench':'field');
- $('matchLineupRows').innerHTML=lineupHTML(s,'field');
+ $('matchLineupRows').innerHTML=formationHTML(s);
  $('contextBand').innerHTML=['home','away'].map(side=>{const t=s.standings?.[side],history=s.recent_form?.[side]||[];return `<div class="context-team"><strong>${esc(s[side].name)}</strong><span class="context-rank">${t?.rank?esc(t.rank)+'º · '+esc(t.points??'—')+' pts':'Classificação indisponível'}</span><span class="form-label">ÚLTIMOS 5</span><div class="form-badges">${history.length?formBadges(history):'<small>Não informados</small>'}</div></div>`}).join('')+'<div class="context-caption">V vitória · E empate · D derrota · mais recente primeiro · últimos jogos em todas as competições · classificação informada pela fonte</div>';
  $('bookings').innerHTML=(s.cards||[]).length?'<span class="eyebrow">CARTÕES NA PARTIDA</span><div class="booking-list">'+s.cards.slice(-4).reverse().map(c=>`<div><span class="card-icon ${c.color==='red'?'red':''}"></span> ${esc(c.player)} <small>${esc(c.minute)}′ · ${esc(c.team)}</small></div>`).join('')+'</div>':'';
 }

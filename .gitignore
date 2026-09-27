@@ -5,3 +5,5 @@ __pycache__/
 models/
 narration.json
 artifacts/
+player_photos.json
+static/uploads/

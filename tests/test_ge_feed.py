@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from backend.ge_feed import GEFeed, agenda_games, matches, event_from_play
+from backend.ge_feed import GEFeed, agenda_games, matches, event_from_play, match_coaches
 from backend.narration_channel import NarrationChannel, LeaseRequest
 from tools.inspect_ge import parse_page
 
@@ -22,6 +22,15 @@ def play(text="O time avança pelo lado esquerdo.", **overrides):
 
 
 class GEParsingTests(unittest.TestCase):
+    def test_coaches_are_read_from_match_squads_and_missing_remains_empty(self):
+        self.assertEqual(match_coaches({}), {})
+        snapshot = {'transmission': {'match': {'squads': {
+            'homeTeam': {'coach': {'name': 'Anthony Popovic', 'popularName': 'Tony Popovic'}},
+            'awayTeam': {'coach': {'name': 'Carlo Ancelotti'}}}}}}
+        self.assertEqual(match_coaches(snapshot), {
+            'home': {'name': 'Tony Popovic', 'source': 'GE'},
+            'away': {'name': 'Carlo Ancelotti', 'source': 'GE'}})
+
     def setUp(self):
         self.primary = {"home": {"name": "CRB"}, "away": {"name": "Sport Recife"}, "kickoff": "2026-09-16T00:00:00Z"}
         self.match = {"id": 123, "homeTeam": {"popularName": "CRB"}, "awayTeam": {"popularName": "Sport"},

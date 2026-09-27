@@ -14,6 +14,14 @@ class Appearance(BaseModel):
     background_image: str = ""
     accent: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
     away_accent: str = Field(default="#72aaff", pattern=r"^#[0-9a-fA-F]{6}$")
+    home_custom_colors: bool = False
+    away_custom_colors: bool = False
+    home_photo_color: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    home_photo_secondary: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    away_photo_color: str = Field(default="#72aaff", pattern=r"^#[0-9a-fA-F]{6}$")
+    away_photo_secondary: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    formation_home_background: str = Field(default="#426e50", pattern=r"^#[0-9a-fA-F]{6}$")
+    formation_away_background: str = Field(default="#426e50", pattern=r"^#[0-9a-fA-F]{6}$")
     panel_opacity: float = Field(default=0.94, ge=0.3, le=1)
     image_dim: float = Field(default=0.35, ge=0, le=0.9)
     layout: Literal["center", "compact"] = "center"

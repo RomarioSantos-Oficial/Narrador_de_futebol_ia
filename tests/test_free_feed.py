@@ -25,6 +25,49 @@ def fixture():
 
 
 class FeedTests(unittest.IsolatedAsyncioTestCase):
+    def test_espn_substitution_objects_respect_did_sub(self):
+        data = fixture()
+        data['rosters'] = [{'team': {'id': '1'}, 'formation': '4-3-3', 'roster': [
+            {'starter': True, 'athlete': {'id': '1', 'displayName': 'Starter'},
+             'subbedIn': {'didSub': False}, 'subbedOut': {'didSub': False}},
+            {'starter': True, 'athlete': {'id': '2', 'displayName': 'Out'},
+             'subbedOut': {'didSub': True}},
+            {'starter': False, 'athlete': {'id': '3', 'displayName': 'In'},
+             'subbedIn': {'didSub': True}},
+            {'starter': False, 'athlete': {'id': '4', 'displayName': 'Bench'},
+             'subbedIn': {'didSub': False}, 'subbedOut': {'didSub': False}},
+        ]}]
+        for phase in ('pre', 'in'):
+            data['header']['competitions'][0]['status']['type']['state'] = phase
+            result, _ = normalize(data, 'bra.1')
+            starters, bench = result['lineups']['home']['starters'], result['lineups']['home']['bench']
+            self.assertFalse(starters[0]['subbed_in'])
+            self.assertFalse(starters[0]['subbed_out'])
+            self.assertTrue(starters[1]['subbed_out'])
+            self.assertTrue(bench[0]['subbed_in'])
+            self.assertFalse(bench[1]['subbed_in'])
+            self.assertFalse(bench[1]['subbed_out'])
+
+    def test_team_colors_use_roster_fallback_and_reject_invalid_values(self):
+        data = fixture()
+        data['header']['competitions'][0]['competitors'][1]['team']['color'] = 'FFCC00'
+        data['rosters'] = [{'team': {'id': '1', 'color': '000000', 'alternateColor': '#006633'}, 'roster': []},
+                           {'team': {'id': '2', 'color': 'invalid'}, 'roster': []}]
+        result, _ = normalize(data, 'bra.1')
+        self.assertEqual(result['home']['color'], '#ffcc00')
+        self.assertEqual(result['home']['alternate_color'], '#006633')
+        self.assertEqual(result['away']['color'], '')
+
+    def test_injury_requires_explicit_flag_not_substitution(self):
+        data = fixture()
+        data['rosters'] = [{'team': {'id': '1'}, 'roster': [
+            {'athlete': {'id': '1', 'displayName': 'Injured'}, 'injured': True},
+            {'athlete': {'id': '2', 'displayName': 'Substituted'}, 'subbedOut': True},
+            {'athlete': {'id': '3', 'displayName': 'Unknown'}, 'injured': 'false'},
+        ]}]
+        result, _ = normalize(data, 'bra.1')
+        self.assertEqual([p['injured'] for p in result['lineups']['home']['bench']], [True, False, False])
+
     def test_lineups_logos_and_named_cards(self):
         data = fixture()
         data['header']['competitions'][0]['competitors'][1]['team']['logos'] = [{'href': 'https://example.com/crest.png'}]

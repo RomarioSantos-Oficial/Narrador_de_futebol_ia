@@ -20,9 +20,10 @@ def instant(value):
 
 
 def same_match(primary, home, away, kickoff):
+    from backend.team_names import canonical_name
     try:
-        return (normalized_name(primary['home']['name']) == normalized_name(home)
-                and normalized_name(primary['away']['name']) == normalized_name(away)
+        return (canonical_name(primary['home']['name']) == canonical_name(home)
+                and canonical_name(primary['away']['name']) == canonical_name(away)
                 and abs((instant(primary['kickoff']) - instant(kickoff)).total_seconds()) <= 900)
     except (KeyError, TypeError, ValueError):
         return False
@@ -133,8 +134,47 @@ def recommend(report):
             else 'Nenhuma fonte consultada ficou apta para recomendar acompanhamento ao vivo.'}
 
 
-def enrich(primary, comparison):
+def complement_coaches(primary, report):
     result = copy.deepcopy(primary)
+    for entry in report.get('sources', {}).values():
+        other = entry.get('data') or {}
+        if entry.get('primary') or not same_match(primary, other.get('home', {}).get('name', ''),
+                other.get('away', {}).get('name', ''), other.get('kickoff', '')):
+            continue
+        for side in ('home', 'away'):
+            coach = other.get('coaches', {}).get(side)
+            current = result.setdefault('coaches', {}).get(side)
+            if coach and not current:
+                result['coaches'][side] = copy.deepcopy(coach)
+            elif coach and current and not current.get('photo') and coach.get('photo') and normalized_name(current['name']) == normalized_name(coach['name']):
+                result['coaches'][side] = copy.deepcopy(coach)
+    return result
+
+
+def pregame_lineups(primary, report):
+    """Copy a complete, verified team sheet as a unit, including its formation."""
+    result = complement_coaches(primary, report)
+    if primary.get('phase') != 'pre':
+        return result
+    for provider, entry in report.get('sources', {}).items():
+        other = entry.get('data') or {}
+        if entry.get('primary') or other.get('phase') != 'pre':
+            continue
+        if not same_match(primary, other.get('home', {}).get('name', ''),
+                          other.get('away', {}).get('name', ''), other.get('kickoff', '')):
+            continue
+        for side in ('home', 'away'):
+            current = result.setdefault('lineups', {}).get(side) or {}
+            alternative = other.get('lineups', {}).get(side) or {}
+            if len(current.get('starters', [])) != 11 and len(alternative.get('starters', [])) == 11:
+                result['lineups'][side] = copy.deepcopy(alternative)
+                result['lineups'][side]['source'] = providers.SOURCES[provider]['name']
+                result.setdefault('data_sources', {})['lineups.' + side] = providers.SOURCES[provider]['name']
+    return result
+
+
+def enrich(primary, comparison):
+    result = complement_coaches(primary, comparison)
     origins = {}
     for provider, entry in comparison['sources'].items():
         if entry.get('primary') or not entry.get('data'):

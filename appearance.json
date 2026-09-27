@@ -4,6 +4,14 @@
   "background_image": "",
   "accent": "#f2ff38",
   "away_accent": "#72aaff",
+  "home_custom_colors": true,
+  "away_custom_colors": true,
+  "home_photo_color": "#0951a1",
+  "home_photo_secondary": "#0951a1",
+  "away_photo_color": "#f7b72a",
+  "away_photo_secondary": "#d41e3d",
+  "formation_home_background": "#426e50",
+  "formation_away_background": "#426e50",
   "panel_opacity": 0.94,
   "image_dim": 0.49,
   "layout": "center",
@@ -16,5 +24,5 @@
   "home_logo": "",
   "away_logo": "",
   "channel_name": "FUTEBOL LIVE",
-  "scene": "formation"
+  "scene": "match"
 }

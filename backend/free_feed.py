@@ -1,11 +1,13 @@
 """Experimental, keyless ESPN feed for local overlay testing."""
 import asyncio
+import os
 import ssl
 import re
 from datetime import date, datetime, timezone
 from typing import Literal
 from backend import providers
 from backend import comparison
+from backend.team_names import display_name
 import copy
 import time
 from backend.match_context import extract_context, event_text
@@ -43,6 +45,13 @@ async def request(league, endpoint, **params):
             return response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(502, "Não foi possível consultar a ESPN. Tente novamente.") from exc
+
+
+def substitution_flag(value):
+    # ESPN uses both booleans and objects such as {"didSub": false}.
+    if isinstance(value, dict):
+        value = value.get('didSub')
+    return value is True
 
 
 def normalize(data, league):
@@ -85,15 +94,24 @@ def normalize(data, league):
               "kickoff": competition.get('date', ''),
               "clock_display": clock, "status": label, "phase": phase, "stats": stats,
               "venue": data.get("gameInfo", {}).get("venue", {}).get("fullName", ""),
-              "events": [], "source": "ESPN (teste gratuito)",
+              "events": [], "coaches": {}, "source": "ESPN (teste gratuito)",
               "ball": {"x": 50, "y": 50, "label": "Posição da bola não fornecida pela fonte"}}
     for side in ("home", "away"):
         team = competitors[side]
         info = team["team"]
+        roster_team = next((g.get("team", {}) for g in data.get("rosters", []) or []
+                            if str(g.get("team", {}).get("id")) == str(info.get("id"))), {})
+        def team_color(key):
+            for value in (info.get(key), roster_team.get(key)):
+                color = str(value or '').lstrip('#')
+                if re.fullmatch(r'[0-9a-fA-F]{6}', color):
+                    return '#' + color.lower()
+            return ''
         logos = info.get("logos") or []
-        result[side] = {"name": info["displayName"], "score": int(team.get("score") or 0),
+        result[side] = {"name": display_name(info["displayName"]), "source_name": info["displayName"], "score": int(team.get("score") or 0),
                         "abbreviation": info.get("abbreviation", info["displayName"][:3].upper()),
-                        "logo": logos[0].get("href", "") if logos else info.get("logo", "")}
+                        "logo": logos[0].get("href", "") if logos else info.get("logo", ""),
+                        "color": team_color('color'), "alternate_color": team_color('alternateColor')}
     result["lineups"] = {"home": {"starters": [], "bench": [], "formation": ""},
                          "away": {"starters": [], "bench": [], "formation": ""}}
     result["cards"] = []
@@ -116,23 +134,26 @@ def normalize(data, league):
                 except (ValueError, TypeError):
                     return 0
             player = {"id": str(athlete.get("id", "")), "name": athlete["displayName"],
+                      "full_name": athlete.get("fullName") or athlete["displayName"],
                       "number": entry.get("jersey", ""), "position": entry.get("position", {}).get("abbreviation", ""),
                       "yellow": count("yellowCards"), "red": count("redCards"),
                       "captain": bool(entry.get("captain") or entry.get("isCaptain")),
-                      "subbed_in": bool(entry.get("subbedIn")), "subbed_out": bool(entry.get("subbedOut")),
+                      "subbed_in": substitution_flag(entry.get("subbedIn")), "subbed_out": substitution_flag(entry.get("subbedOut")),
+                      "injured": entry.get("injured") is True or athlete.get("injured") is True,
                       "formation_place": entry.get("formationPlace"),
                       "replacement_id": str((entry.get("subbedOutFor") or {}).get("athlete", {}).get("id", "")),
                       "photo": (athlete.get("headshot") or {}).get("href", ""),
                       "match_stats": {key: player_stats[key] for key in
                                       ("totalGoals", "goalAssists", "totalShots", "saves", "foulsCommitted")
                                       if key in player_stats}}
-            lineup["starters" if entry.get("starter") else "bench"].append(player)
+            is_starter = entry.get("starter") is True or (phase == "pre" and str(entry.get("formationPlace") or "").isdigit() and 1 <= int(entry["formationPlace"]) <= 11)
+            lineup["starters" if is_starter else "bench"].append(player)
     for event in data.get("keyEvents", []) or []:
         typ = event.get("type", {}).get("type", "")
         participants = event.get("participants", []) or []
         athlete = participants[0].get("athlete", {}) if participants else {}
         player_name = athlete.get("displayName", "")
-        team_name = event.get("team", {}).get("displayName", "")
+        team_name = display_name(event.get("team", {}).get("displayName", ""))
         minute_text = event.get("clock", {}).get("displayValue", "—").rstrip("'")
         icon = "●"
         text = event.get("text") or event.get("type", {}).get("text", "Evento")
@@ -213,7 +234,19 @@ class FreeFeed:
         self.primary_state = copy.deepcopy(result)
         if self.enrich:
             report = await self.compare(selection, result)
-            result = comparison.enrich(result, report)
+            result = comparison.enrich(comparison.pregame_lineups(result, report), report)
+        elif (result.get('phase') == 'pre' and any(
+                len(result.get('lineups', {}).get(side, {}).get('starters', [])) != 11 for side in ('home', 'away'))) or any(
+                not result.get('coaches', {}).get(side) for side in ('home', 'away')):
+            alternatives = selection.provider != 'espn' or any(
+                os.getenv(providers.SOURCES[p].get('env') or '', '').strip()
+                for p in ('api_football', 'football_data'))
+            if alternatives:
+                # Publish the match immediately while the other configured sources are queried.
+                self.state.update(result)
+                await self.broadcast()
+                report = await self.compare(selection, result)
+                result = comparison.pregame_lineups(result, report)
         self.state.update(result)
         self.info.update(error=None, updated_at=datetime.now(timezone.utc).isoformat())
         self.state["updated_at"] = self.info["updated_at"]
@@ -222,7 +255,8 @@ class FreeFeed:
 
     async def compare(self, selection, primary):
         key = (selection.provider, selection.league, selection.event)
-        if self.comparison_key != key or time.monotonic() - self.comparison_time >= 300:
+        interval = 30 if primary.get('phase') == 'pre' else 300
+        if self.comparison_key != key or time.monotonic() - self.comparison_time >= interval:
             report = await comparison.compare(selection, primary, request, normalize)
             self.comparison, self.comparison_key = report, key
             self.comparison_time = time.monotonic()

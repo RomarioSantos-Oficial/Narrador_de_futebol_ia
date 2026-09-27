@@ -11,6 +11,7 @@ from dotenv import set_key
 from fastapi import HTTPException
 from pydantic import BaseModel, SecretStr
 from backend.leagues import LEAGUE_IDS
+from backend.coaches import normalize_coach
 
 SOURCES = {
     "espn": {"name": "ESPN", "interval": 30, "live": True, "note": "Teste gratuito sem chave. Dados sujeitos à cobertura e ao atraso da fonte."},
@@ -87,7 +88,7 @@ def number(value):
 def blank(source):
     return {'source': SOURCES[source]['name'], 'competition': '', 'minute': 0, 'clock_display': '—',
             'recent_form': {'home': [], 'away': []}, 'standings': {'home': None, 'away': None}, 'field_action': None, 'league_table': None,
-            'status': 'PRÉ-JOGO', 'phase': 'pre', 'venue': '',
+            'status': 'PRÉ-JOGO', 'phase': 'pre', 'venue': '', 'coaches': {},
             'stats': {key: [None, None] for key in STAT_NAMES}, 'events': [], 'cards': [],
             'lineups': {side: {'starters': [], 'bench': [], 'formation': ''} for side in ('home', 'away')},
             'ball': {'x': 50, 'y': 50, 'label': 'Posição da bola não fornecida pela fonte'}}
@@ -151,6 +152,9 @@ def normalize_api_football(row):
     for group in row.get('lineups', []) or []:
         side = next((s for s in ('home', 'away') if str(group['team']['id']) == str(row['teams'][s]['id'])), None)
         if side:
+            coach = normalize_coach(group.get('coach'), 'API-Football')
+            if coach:
+                out['coaches'][side] = coach
             out['lineups'][side] = {'formation': group.get('formation') or '',
                                     'starters': [player(p['player']) for p in group.get('startXI', [])],
                                     'bench': [player(p['player']) for p in group.get('substitutes', [])]}
@@ -175,6 +179,9 @@ def normalize_football_data(row):
                'yellow_cards': 'yellow', 'red_cards': 'red', 'fouls': 'fouls', 'offsides': 'offsides', 'saves': 'saves'}
     for i, side in enumerate(('home', 'away')):
         info = row[side+'Team']
+        coach = normalize_coach(info.get('coach'), 'Football-Data.org')
+        if coach:
+            out['coaches'][side] = coach
         out[side] = team(info['name'], row.get('score', {}).get('fullTime', {}).get(side), info.get('crest'), info.get('tla'))
         out['lineups'][side] = {'formation': info.get('formation') or '',
                                 'starters': [player(p) for p in info.get('lineup', []) or []],

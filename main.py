@@ -24,6 +24,7 @@ from backend.ge_feed import GEFeed
 from backend.narration_channel import NarrationChannel
 from backend.rehearsal import Rehearsal
 from backend.player_profiles import PlayerProfiles
+from backend.player_photos import PlayerPhotos
 
 load_dotenv()
 BASE = Path(__file__).parent
@@ -91,6 +92,10 @@ def deep_update(dst: dict, src: dict):
 
 async def broadcast():
     ge_feed.observe()
+    from backend.ge_feed import apply_pregame_lineups
+    apply_pregame_lineups(state)
+    support_feed.observe()
+    player_profiles.observe()
     narration_channel.refresh()
     dead = []
     for ws in tuple(clients):
@@ -118,6 +123,11 @@ club_context = ClubContext()
 club_context.install(app, state)
 player_profiles = PlayerProfiles(state, broadcast)
 player_profiles.install(app)
+from backend.support_feed import SupportFeed
+support_feed = SupportFeed(state, broadcast)
+support_feed.install(app)
+player_photos = PlayerPhotos(BASE, state, broadcast)
+player_photos.install(app)
 
 @app.get("/favicon.ico", include_in_schema=False, status_code=204)
 async def favicon():

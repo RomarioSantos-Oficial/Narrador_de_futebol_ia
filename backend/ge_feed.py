@@ -12,18 +12,21 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from backend.comparison import normalized_name, instant
+from backend.team_names import canonical_name
+from backend.coaches import normalize_coach
 from tools.inspect_ge import parse_page, validate_url
 from backend.ge_browser import GEPublicPage, GEAccessUnavailable
 
 BRASILIA = timezone(timedelta(hours=-3))
 ALIASES = {"brazil": "brasil",
+           "atletico goianiense": "atletico go", "atletico clube goianiense": "atletico go",
            "sport recife": "sport", "sport club do recife": "sport",
            "rb bragantino": "bragantino", "red bull bragantino": "bragantino",
            "atletico mineiro": "atletico mg", "athletico paranaense": "athletico pr"}
 
 
 def team_name(value):
-    name = normalized_name(value)
+    name = canonical_name(value)
     return ALIASES.get(name, name)
 
 
@@ -101,6 +104,51 @@ def event_from_play(play, url):
     }
     value["revision"] = hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     return value
+
+
+def match_lineups(snapshot):
+    squads = snapshot.get('transmission', {}).get('match', {}).get('squads') or {}
+    result = {}
+    positions = {'GOL': 'GK', 'LAD': 'RB', 'LAE': 'LB', 'ZAD': 'CB', 'ZAE': 'CB',
+                 'ZAG': 'CB', 'VOL': 'DM', 'MEC': 'CM', 'MEI': 'AM', 'ATA': 'F'}
+    for side in ('home', 'away'):
+        team = squads.get(side + 'Team') or {}
+        lineup = {'formation': team.get('formation') or '', 'starters': [], 'bench': [], 'source': 'GE'}
+        for source, target in (('lineUp', 'starters'), ('bench', 'bench')):
+            for index, row in enumerate(team.get(source) or []):
+                name = row.get('popularName') or row.get('name')
+                if not name:
+                    continue
+                position = (row.get('position') or {}).get('initials', '')
+                lineup[target].append({'id': 'ge:' + str(row.get('slug') or row.get('name') or name),
+                    'name': name, 'full_name': row.get('name') or name, 'number': row.get('shirtNumber', ''),
+                    'position': positions.get(position, position), 'photo': row.get('photo') or '',
+                    'formation_place': index + 1 if target == 'starters' else None})
+        result[side] = lineup
+    return result
+
+
+def apply_pregame_lineups(state):
+    """Use GE starters before kickoff while primary starters are absent."""
+    ge = state.get('ge') or {}
+    if state.get('phase') != 'pre' or not ge.get('ready'):
+        return
+    for side, lineup in (ge.get('lineups') or {}).items():
+        current = state.setdefault('lineups', {}).get(side) or {}
+        if lineup.get('starters') and (len(lineup['starters']) == 11 or not current.get('starters') or current.get('source') == 'GE'):
+            state['lineups'][side] = copy.deepcopy(lineup)
+
+
+def match_coaches(snapshot):
+    squads = snapshot.get('transmission', {}).get('match', {}).get('squads') or {}
+    result = {}
+    for side in ('home', 'away'):
+        team = squads.get(side + 'Team') or {}
+        coach = team.get('coach') or {}
+        normalized = normalize_coach(coach, 'GE')
+        if normalized:
+            result[side] = normalized
+    return result
 
 
 class GEOptions(BaseModel):
@@ -189,7 +237,7 @@ class GEFeed:
                         previous = events
                         initial = False
                         await self.publish(generation, ready=True, connected=True, mode="page", interval=30, error=None,
-                                           events=self.sorted_events(events), url=url, updated_at=datetime.now(timezone.utc).isoformat(),
+                                           events=self.sorted_events(events), coaches=match_coaches(snapshot), lineups=match_lineups(snapshot), url=url, updated_at=datetime.now(timezone.utc).isoformat(),
                                            status="GE · página pública a cada 30 s. Lances novos seguem diretamente para a voz.")
                     except GEAccessUnavailable:
                         raise

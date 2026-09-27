@@ -45,8 +45,65 @@ class CurrentLineupTests(unittest.TestCase):
         self.assertEqual(result['red'], 10)
         self.assertEqual(result['missing'], 10)
         self.assertEqual(result['photo'], '')
-        self.assertEqual(result['bench'], ['Unused'])
+        self.assertEqual(result['bench'], ['Pedro', 'Unused', 'Dismissed', 'Starter 2', 'Starter 10'])
         self.assertEqual(result['emptyBench'], [])
+
+    def test_bench_name_icons_and_coach(self):
+        from playwright.sync_api import sync_playwright
+        base = Path(__file__).resolve().parents[1]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel='msedge', headless=True)
+            page = browser.new_page()
+            for name in ('shared.js', 'formation.js'):
+                page.add_script_tag(path=str(base / 'static' / name))
+            result = page.evaluate('''() => {
+                const player={id:'1',name:'Scorer',subbed_out:true,yellow:1,
+                    match_stats:{totalGoals:2,goalAssists:1}};
+                const s={home:{name:'Home',color:'#ffcc00',alternate_color:'#006633'},away:{name:'Away'},
+                    lineups:{home:{starters:[player],bench:[]}},
+                    ge:{ready:true,coaches:{home:{name:'Coach <test>',source:'GE'}}}};
+                document.body.innerHTML=formationBenchHTML(s);
+                const result={name:document.querySelector('.formation-name').textContent,
+                    goals:document.querySelector('.formation-goals').textContent,
+                    yellow:document.querySelectorAll('.formation-avatar .formation-yellow').length,
+                    status:document.querySelector('.formation-player-status').textContent,
+                    coach:document.querySelector('.formation-coach strong').textContent,
+                    injected:document.querySelectorAll('test').length,
+                    primary:document.querySelector('.formation-avatar').style.getPropertyValue('--team-primary'),
+                    secondary:document.querySelector('.formation-avatar').style.getPropertyValue('--team-secondary'),
+                    fallback:formationTeamColors({color:'red;display:none'}),
+                    awayIndependent:formationTeamColors({color:'#992242',alternate_color:'#ffffff'},
+                        {home_custom_colors:true,home_photo_color:'#ffffff',home_photo_secondary:'#ff0000'},'away')};
+                player.red=1;
+                document.body.innerHTML=formationBenchHTML(s);
+                result.red=document.querySelectorAll('.formation-avatar .formation-red').length;
+                result.dismissed=document.querySelector('.formation-player-status').textContent;
+                player.injured=true;
+                document.body.innerHTML=formationBenchHTML(s);
+                result.injury=document.querySelectorAll('.formation-avatar .formation-injury').length;
+                result.out=document.querySelectorAll('.formation-avatar .formation-sub-out').length;
+                player.subbed_out=false;player.subbed_in=true;player.red=0;player.injured=false;
+                document.body.innerHTML=formationPlayer(s,player,'home');
+                result.entered=document.querySelectorAll('.formation-avatar .formation-sub-in').length;
+                result.noInjury=document.querySelectorAll('.formation-injury').length;
+                return result;
+            }''')
+            browser.close()
+        self.assertEqual(result['goals'], '⚽⚽')
+        self.assertEqual(result['yellow'], 1)
+        self.assertEqual(result['red'], 1)
+        self.assertEqual(result['status'], 'Saiu')
+        self.assertEqual(result['dismissed'], 'Expulso')
+        self.assertEqual(result['coach'], 'Coach <test>')
+        self.assertEqual(result['injected'], 0)
+        self.assertEqual(result['primary'], '#ffcc00')
+        self.assertEqual(result['secondary'], '#006633')
+        self.assertEqual(result['fallback'], '--team-primary:#d9e6df;--team-secondary:#d9e6df')
+        self.assertEqual(result['awayIndependent'], '--team-primary:#992242;--team-secondary:#ffffff')
+        self.assertEqual(result['injury'], 1)
+        self.assertEqual(result['out'], 1)
+        self.assertEqual(result['entered'], 1)
+        self.assertEqual(result['noInjury'], 0)
 
     def test_substitutions_dismissals_and_original_lineup(self):
         from playwright.sync_api import sync_playwright
