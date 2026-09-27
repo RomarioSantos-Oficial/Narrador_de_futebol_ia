@@ -7,6 +7,9 @@ import re
 import time
 
 from backend.comparison import normalized_name
+from backend.team_names import display_name, canonical_name
+from backend.coaches import normalize_coach
+from backend.player_profiles import identity
 from fastapi import HTTPException
 from backend import providers
 COUNTRIES = {'England': 'Inglaterra', 'Scotland': 'Escócia', 'Wales': 'País de Gales', 'Northern Ireland': 'Irlanda do Norte',
@@ -139,7 +142,9 @@ def player_facts(rows, lineup, side, source, team_id):
         coach = managers[0]
         # Explicitly a catalogue claim; it is not treated as the match's confirmed starting lineup.
         result.append({'id': 'coach:' + coach['idPlayer'],
-                       'text': f"Na comissão técnica cadastrada de {coach.get('strTeam', '')}, o TheSportsDB informa {coach['strPlayer']} como treinador.",
+                       'text': f"Na comissão técnica cadastrada de {display_name(coach.get('strTeam', ''))}, o TheSportsDB informa {coach['strPlayer']} como treinador.",
+                       'side': side,
+                       'coach': normalize_coach({'name': coach['strPlayer'], 'photo': coach.get('strCutout') or coach.get('strThumb')}, 'TheSportsDB'),
                        'source': {'name': 'TheSportsDB', 'url': 'https://www.thesportsdb.com/player/' + coach['idPlayer']}})
     return result
 
@@ -148,7 +153,7 @@ def identify(rows, name):
     matches = []
     for row in rows or []:
         names = [row.get('strTeam', ''), *(row.get('strTeamAlternate') or '').split(',')]
-        if row.get('strSport') == 'Soccer' and normalized_name(name) in {normalized_name(n) for n in names if n.strip()}:
+        if row.get('strSport') == 'Soccer' and canonical_name(name) in {canonical_name(n) for n in names if n.strip()}:
             matches.append(row)
     return matches[0] if len(matches) == 1 else None
 
@@ -178,6 +183,13 @@ class ClubContext:
         self.teams = {}
         self.lookup_cache = {}
         self.lock = asyncio.Lock()
+        self.match_key = None
+
+    def observe(self, state):
+        key = identity(state)
+        if key != self.match_key:
+            self.match_key = key
+            state['catalog_coaches'] = {}
 
     async def team(self, name):
         if not isinstance(name, str) or not 2 <= len(name) <= 150 or name in ('Mandante', 'Visitante'):
@@ -191,7 +203,7 @@ class ClubContext:
                 data = await providers.request('thesportsdb', 'searchteams.php', t=name)
                 row = identify(data.get('teams'), name)
                 self.teams[key] = row
-                result = facts_for(row, name)
+                result = facts_for(row, display_name(name))
                 for ident, text, label, url in CLUB_NOTES.get(str((row or {}).get('idTeam')), []):
                     result.append({'id': str(row['idTeam']) + ':' + ident, 'text': text, 'source': {'name': label, 'url': url}})
                 ttl = 86400 if result else 600
@@ -237,14 +249,20 @@ class ClubContext:
                 facts.extend(stadium_facts(venues[0]))
         return facts
 
-    def install(self, app, state):
+    def install(self, app, state, broadcast=None):
         @app.get('/api/narration/context')
         async def context():
+            self.observe(state)
             snapshot = copy.deepcopy(state)
             names = [snapshot.get(side, {}).get('name', '') for side in ('home', 'away')]
-            facts = await asyncio.gather(*(self.match_team(name, snapshot.get('lineups', {}).get(side, {}), side, snapshot.get('source', '')) for name, side in zip(names, ('home', 'away'))))
+            queries = [snapshot.get(side, {}).get('source_name') or name for name, side in zip(names, ('home', 'away'))]
+            facts = await asyncio.gather(*(self.match_team(name, snapshot.get('lineups', {}).get(side, {}), side, snapshot.get('source', '')) for name, side in zip(queries, ('home', 'away'))))
             # Alternate teams instead of exhausting every fact about the home club first.
             alternating = [rows[index] for index in range(max(map(len, facts), default=0)) for rows in facts if index < len(rows)]
+            if identity(state) == identity(snapshot):
+                state['catalog_coaches'] = {fact['side']: fact['coach'] for fact in alternating if fact.get('coach') and fact.get('side') in ('home', 'away')}
+                if broadcast:
+                    await broadcast()
             return {'teams': names, 'facts': alternating,
                     'message': f'{len(alternating)} informações dos clubes disponíveis.' if alternating else
                     'A fonte não forneceu curiosidades com identificação suficiente para estes times.'}

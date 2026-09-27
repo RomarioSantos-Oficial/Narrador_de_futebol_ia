@@ -91,6 +91,7 @@ def deep_update(dst: dict, src: dict):
             dst[k] = v
 
 async def broadcast():
+    club_context.observe(state)
     ge_feed.observe()
     from backend.ge_feed import apply_pregame_lineups
     apply_pregame_lineups(state)
@@ -120,7 +121,7 @@ local_voice.install(app)
 local_brain = LocalBrain(BASE)
 local_brain.install(app)
 club_context = ClubContext()
-club_context.install(app, state)
+club_context.install(app, state, broadcast)
 player_profiles = PlayerProfiles(state, broadcast)
 player_profiles.install(app)
 from backend.support_feed import SupportFeed

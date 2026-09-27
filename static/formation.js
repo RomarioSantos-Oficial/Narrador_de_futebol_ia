@@ -58,7 +58,7 @@ function benchPlayers(lineup){
 function formationBenchHTML(s){
  return ['home','away'].map(side=>{
   const lineup=s.lineups?.[side],players=benchPlayers(lineup||{});
-  const candidates=[s.ge?.ready?s.ge.coaches?.[side]:null,s.coaches?.[side]].filter(c=>c?.name);
+  const candidates=[s.ge?.ready?s.ge.coaches?.[side]:null,s.coaches?.[side],s.catalog_coaches?.[side]].filter(c=>c?.name);
   const coach=candidates.find(c=>c.name===candidates[0]?.name&&formationPhoto(c.photo))||candidates[0];
   const coachPhoto=formationPhoto(coach?.photo);
   return `<section class="formation-bench-team"><header><span class="eyebrow">BANCO E SAÍDAS</span><h3>${esc(s[side]?.name||'Time')}</h3></header><div class="formation-bench-grid">${players.length?players.map(p=>formationPlayer(s,p,side)).join(''):`<p class="formation-bench-empty">${lineup?.bench?.length?'Nenhum jogador fora de campo informado.':'Banco não informado pela fonte.'}</p>`}</div><footer class="formation-coach"><span>TÉCNICO</span>${coachPhoto?`<img class="formation-coach-photo" src="${esc(coachPhoto)}" alt="" onerror="this.hidden=true">`:""}<strong>${esc(coach?.name||'Não informado pela fonte')}</strong>${coach?.source?`<small>Fonte: ${esc(coach.source)}</small>`:''}</footer></section>`;
