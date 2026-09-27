@@ -174,6 +174,7 @@ def normalize(data, league):
             minute_text = minute_text or "0"
         text, original = event_text(event, text)
         result["events"].append({"minute": minute_text or '—', "icon": icon, "text": text, "text_en": original,
+                                 "kind": 'substitution' if typ == 'substitution' else 'goal' if event.get('scoringPlay') else 'event',
                                  "id": 'espn:' + str(event['id']) if event.get('id') else None,
                                  "player": player_name, "team": team_name,
                                  "side": next((side for side in ('home', 'away') if str(competitors[side]['team']['id']) == str(event.get('team', {}).get('id', ''))), None),
