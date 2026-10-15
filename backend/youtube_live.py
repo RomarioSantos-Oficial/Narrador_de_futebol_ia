@@ -67,7 +67,7 @@ class YouTubeLiveChat:
     @classmethod
     def canonical_live_url(cls, value):
         video_id = cls.extract_video_id(value)
-        return f"https://www.youtube.com/watch?v={video_id}" if video_id else value.strip()
+        return f"https://www.youtube.com/live_chat?is_popout=1&v={video_id}" if video_id else value.strip()
 
     @staticmethod
     def extract_channel_handle(value):
