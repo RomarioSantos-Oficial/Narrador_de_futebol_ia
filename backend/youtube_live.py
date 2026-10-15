@@ -202,7 +202,7 @@ class YouTubeLiveChat:
             return "Pedido de narração recebido. Os lances importantes têm prioridade na fila."
         return None
 
-    async def poll(self):
+    async def fetch_chat_messages(self):
         config = self.config()
         key, chat_id = config["api_key"], config["live_chat_id"]
         params = {"liveChatId": chat_id, "part": "snippet,authorDetails", "maxResults": 200, "key": key}
@@ -217,7 +217,7 @@ class YouTubeLiveChat:
         self.info.update(enabled=True)
         while self.configured():
             try:
-                data = await self.poll()
+                data = await self.fetch_chat_messages()
                 self.next_page = data.get("nextPageToken", self.next_page)
                 for item in data.get("items", []):
                     message_id = str(item.get("id", ""))
