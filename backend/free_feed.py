@@ -200,6 +200,7 @@ def normalize(data, league):
 class FreeFeed:
     def __init__(self, state, broadcast):
         self.state, self.broadcast = state, broadcast
+        self.after_select = None
         self.task = None
         self.selected = None
         self.mode = "legacy"
@@ -327,6 +328,8 @@ class FreeFeed:
             self.info["active"] = not completed and self.info['interval'] > 0
             if self.info['active']:
                 self.task = asyncio.create_task(self.loop(selection))
+            if self.after_select:
+                await self.after_select()
             await self.broadcast()
             return self.info
 
