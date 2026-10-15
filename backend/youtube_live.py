@@ -24,6 +24,8 @@ def clean_text(value: Any, limit: int = 240) -> str:
 
 
 class YouTubeLiveChat:
+    UNOFFICIAL_BLOCKED = "O YouTube bloqueou o leitor sem API nesta live. Informe uma chave da YouTube Data API v3 para ler o chat com estabilidade."
+
     def __init__(self, state, broadcast, base=None):
         self.state = state
         self.broadcast = broadcast
@@ -375,6 +377,11 @@ class YouTubeLiveChat:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                if "Unable to parse initial video data" in str(exc) or exc.__class__.__name__ == "ParsingError":
+                    self.info.update(enabled=False, connected=False, error=self.UNOFFICIAL_BLOCKED)
+                    self.state["youtube_chat"] = self.status()
+                    await self.broadcast()
+                    return
                 self.info.update(enabled=True, connected=False, error=clean_text(exc, 240))
                 self.state["youtube_chat"] = self.status()
                 await self.broadcast()
