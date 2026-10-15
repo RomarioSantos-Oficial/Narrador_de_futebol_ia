@@ -205,6 +205,12 @@ class YouTubeLiveChat:
     async def fetch_chat_messages(self):
         config = self.config()
         key, chat_id = config["api_key"], config["live_chat_id"]
+        video_id = self.extract_video_id(chat_id)
+        if video_id:
+            chat_id, video_id = await self.resolve_live_chat_id(key, chat_id)
+            self.saved_settings[self.match_key()] = {"api_key": key, "live_chat_id": chat_id, "video_id": video_id}
+            if self.settings_path:
+                self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
         params = {"liveChatId": chat_id, "part": "snippet,authorDetails", "maxResults": 200, "key": key}
         if self.next_page:
             params["pageToken"] = self.next_page
