@@ -24,6 +24,8 @@
 
 .formation-slot>.formation-player{transform:scale(var(--formation-player-scale,1));transform-origin:center}
 
+#stage.lineup-reading #lineupsPanel,#stage.lineup-reading #formationPanel,#stage.lineup-reading #formationBenchPanel{visibility:hidden}
+
 .lineup-read-animation{position:absolute;z-index:20;left:513px;bottom:48px;width:850px;height:622px;border:1px solid #ffffff35;border-radius:16px;overflow:hidden;box-shadow:0 22px 70px #000b;animation:lineup-intro-card .35s ease-out}
 #stage.formation-scene .lineup-read-animation{left:auto;right:70px;top:35px;bottom:auto;width:760px;height:calc(100% - 70px);max-height:1010px}
 .lineup-read-card{height:100%;display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 10%,#18283a,#0b121a 78%);color:#fff}

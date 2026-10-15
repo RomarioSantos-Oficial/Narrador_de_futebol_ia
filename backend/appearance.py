@@ -22,7 +22,7 @@ class Appearance(BaseModel):
     away_photo_secondary: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
     formation_home_background: str = Field(default="#426e50", pattern=r"^#[0-9a-fA-F]{6}$")
     formation_away_background: str = Field(default="#426e50", pattern=r"^#[0-9a-fA-F]{6}$")
-    formation_player_scale: float = Field(default=1, ge=0.8, le=1.7)
+    formation_player_scale: float = Field(default=1.15, ge=0.8, le=1.7)
     panel_opacity: float = Field(default=0.94, ge=0.3, le=1)
     image_dim: float = Field(default=0.35, ge=0, le=0.9)
     layout: Literal["center", "compact"] = "center"

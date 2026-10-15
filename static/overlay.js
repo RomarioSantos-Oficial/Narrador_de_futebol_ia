@@ -3,7 +3,7 @@ addEventListener('resize',resize);resize();
 function logo(side,url,name){const img=$(side+'Logo'),fallback=$(side+'Fallback');fallback.textContent=name;img.alt='Escudo '+name;if(img.dataset.url===url)return;img.dataset.url=url||'';img.hidden=true;fallback.hidden=false;if(url){img.onload=()=>{img.hidden=false;fallback.hidden=true};img.onerror=()=>{img.hidden=true;fallback.hidden=false};img.src=url}else img.removeAttribute('src')}
 function appearance(a={}){
  const root=document.documentElement;root.style.setProperty('--accent',a.accent||'#ffffff');root.style.setProperty('--away',a.away_accent||'#72aaff');root.style.setProperty('--panel',`rgba(12,20,30,${a.panel_opacity??.94})`);
- root.style.setProperty('--formation-player-scale',String(a.formation_player_scale??1));
+ root.style.setProperty('--formation-player-scale',String(a.formation_player_scale??1.15));
  $('channelName').textContent=a.channel_name||'';
  const channelLogo=$('channelLogo'),brandMark=$('brandMark'),logoUrl=a.channel_logo||'';
  brandMark.hidden=!!logoUrl;channelLogo.alt='Logo do canal '+(a.channel_name||'');
@@ -47,7 +47,8 @@ function updateLineupReadAnimation(s){
  }
  const queued=(playback.queue||[]).some(isLineup),reading=isLineup(current);
  if(!reading&&!queued)lineupReadProgress=null;
- if(!lineupReadProgress){layer.hidden=true;layer.replaceChildren();layer.dataset.progress='';layer.classList.remove('lineup-read-scene');return;}
+ if(!lineupReadProgress){layer.hidden=true;layer.replaceChildren();layer.dataset.progress='';layer.classList.remove('lineup-read-scene');$('stage').classList.remove('lineup-reading');return;}
+ $('stage').classList.add('lineup-reading');
  layer.hidden=false;
  const scene=s.appearance?.scene||'match',signature=JSON.stringify([lineupReadProgress,scene]);
  if(layer.dataset.progress===signature)return;

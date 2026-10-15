@@ -12,7 +12,7 @@
   "away_photo_secondary": "#0951a1",
   "formation_home_background": "#426e50",
   "formation_away_background": "#426e50",
-  "formation_player_scale": 1.0,
+  "formation_player_scale": 1.15,
   "panel_opacity": 1.0,
   "image_dim": 0.61,
   "layout": "center",
