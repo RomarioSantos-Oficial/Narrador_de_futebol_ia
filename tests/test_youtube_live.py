@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from backend.youtube_live import YouTubeLiveChat
 
@@ -46,6 +46,19 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.chat.response_for("!vota Pedro", "Ana")
         self.chat.response_for("!vota Lucas", "Ana")
         self.assertEqual(self.chat.status()["votes"], [{"name": "Lucas", "votes": 1, "percentage": 100.0}])
+
+    def test_saved_studio_link_is_resolved_before_chat_request(self):
+        self.chat.saved_settings[self.chat.match_key()] = {
+            "api_key": "test-api-key", "live_chat_id": "https://studio.youtube.com/live_chat?is_popout=1&v=ded3jykYQfA"
+        }
+        with patch.object(self.chat, "resolve_live_chat_id", new=AsyncMock(return_value=("resolved-chat-id", "ded3jykYQfA"))):
+            with patch("backend.youtube_live.httpx.AsyncClient") as client_cls:
+                response = client_cls.return_value.__aenter__.return_value.get
+                response.return_value = AsyncMock()
+                response.return_value.json.return_value = {"items": [], "nextPageToken": "next"}
+                import asyncio
+                asyncio.run(self.chat.fetch_chat_messages())
+        self.assertEqual(self.chat.config()["live_chat_id"], "resolved-chat-id")
 
 
 if __name__ == "__main__":
