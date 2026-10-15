@@ -64,6 +64,11 @@ class YouTubeLiveChat:
         match = re.search(r"(?:[?&]v=|youtu\.be/|youtube\.com/(?:live/|embed/|watch\?v=))([A-Za-z0-9_-]{11})", text)
         return match.group(1) if match else ""
 
+    @classmethod
+    def canonical_live_url(cls, value):
+        video_id = cls.extract_video_id(value)
+        return f"https://www.youtube.com/watch?v={video_id}" if video_id else value.strip()
+
     @staticmethod
     def extract_channel_handle(value):
         text = clean_text(value, 300).strip()
@@ -283,7 +288,7 @@ class YouTubeLiveChat:
         except ImportError:
             self.info.update(connected=False, error="Instale a dependência chat-downloader e reinicie o programa.")
             return
-        live_url = self.config()["live_url"]
+        live_url = self.canonical_live_url(self.config()["live_url"])
         try:
             chat = await asyncio.to_thread(ChatDownloader().get_chat, live_url)
             self.info.update(enabled=True, connected=True, error=None)

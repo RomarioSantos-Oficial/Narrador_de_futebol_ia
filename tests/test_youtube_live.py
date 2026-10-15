@@ -36,6 +36,7 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.assertEqual(self.chat.extract_video_id(link), "ded3jykYQfA")
         self.assertEqual(self.chat.extract_video_id("ded3jykYQfA"), "ded3jykYQfA")
         self.assertNotEqual(self.chat.extract_video_id(link), "liveChatId")
+        self.assertEqual(self.chat.canonical_live_url("https://youtube.com/live/ded3jykYQfA?feature=share"), "https://www.youtube.com/watch?v=ded3jykYQfA")
 
     def test_accepts_channel_handle_only(self):
         self.assertEqual(self.chat.extract_channel_handle("@PosJogoBR"), "PosJogoBR")
