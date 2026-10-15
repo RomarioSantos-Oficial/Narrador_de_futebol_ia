@@ -50,11 +50,11 @@ class YouTubeLiveChat:
 
     def config(self):
         saved = self.saved_settings.get(self.match_key(), {})
-        return {"api_key": str(saved.get("api_key") or os.getenv("YOUTUBE_API_KEY", "")).strip(), "live_chat_id": str(saved.get("live_chat_id") or os.getenv("YOUTUBE_LIVE_CHAT_ID", "")).strip(), "video_id": str(saved.get("video_id", "")).strip()}
+        return {"api_key": str(saved.get("api_key") or os.getenv("YOUTUBE_API_KEY", "")).strip(), "live_chat_id": str(saved.get("live_chat_id") or os.getenv("YOUTUBE_LIVE_CHAT_ID", "")).strip(), "live_url": str(saved.get("live_url", "")).strip(), "video_id": str(saved.get("video_id", "")).strip()}
 
     def configured(self):
         current = self.config()
-        return bool(current["api_key"] and current["live_chat_id"])
+        return bool(current["api_key"] and current["live_chat_id"]) or bool(current["live_url"] and self.extract_video_id(current["live_url"]))
 
     @staticmethod
     def extract_video_id(value):
@@ -157,7 +157,8 @@ class YouTubeLiveChat:
             for name, count in self.poll.get("votes", {}).items()]}
 
     def status(self):
-        return {**self.info, "configured": self.configured(), "chat_id": bool(os.getenv("YOUTUBE_LIVE_CHAT_ID", "").strip()), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}, "votes": self.votes_ranking(), "vote_total": sum(self.votes.values()), "poll": self.poll_status()}
+        config = self.config()
+        return {**self.info, "configured": self.configured(), "mode": "sem_api" if config["live_url"] and not config["api_key"] else "api", "chat_id": bool(config["live_chat_id"]), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}, "votes": self.votes_ranking(), "vote_total": sum(self.votes.values()), "poll": self.poll_status()}
 
     def _player_names(self):
         names = []
@@ -269,7 +270,55 @@ class YouTubeLiveChat:
             response.raise_for_status()
             return response.json()
 
+    @staticmethod
+    def _next_unofficial(iterator):
+        try:
+            return next(iterator)
+        except StopIteration:
+            return None
+
+    async def unofficial_loop(self):
+        try:
+            from chat_downloader import ChatDownloader
+        except ImportError:
+            self.info.update(connected=False, error="Instale a dependência chat-downloader e reinicie o programa.")
+            return
+        live_url = self.config()["live_url"]
+        try:
+            chat = await asyncio.to_thread(ChatDownloader().get_chat, live_url)
+            self.info.update(enabled=True, connected=True, error=None)
+            while self.configured():
+                item = await asyncio.to_thread(self._next_unofficial, chat)
+                if not item:
+                    break
+                message_id = str(item.get("message_id", item.get("id", "")))
+                if message_id and message_id in self.seen:
+                    continue
+                if message_id:
+                    self.seen.add(message_id)
+                text = clean_text(item.get("message", item.get("message_text", "")))
+                author_data = item.get("author") or {}
+                author = clean_text(author_data.get("name", "espectador") if isinstance(author_data, dict) else author_data, 80)
+                self.track_mentions(text)
+                response = self.response_for(text, author)
+                self.info["messages"] += 1
+                if response:
+                    self.state["events"] = ([self.make_event(response, author)] + self.state.get("events", []))[:6]
+                self.state["youtube_chat"] = self.status()
+                await self.broadcast()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.info.update(connected=False, error=clean_text(exc, 240))
+            self.state["youtube_chat"] = self.status()
+            await self.broadcast()
+
     async def loop(self):
+        if self.config().get("live_url") and not self.config().get("api_key"):
+            await self.unofficial_loop()
+            self.info.update(enabled=False, connected=False)
+            self.state["youtube_chat"] = self.status()
+            return
         self.info.update(enabled=True)
         while self.configured():
             try:
@@ -340,13 +389,22 @@ class YouTubeLiveChat:
                 return {"error": "A chave do YouTube parece incompleta.", **self.status()}
             if live_chat_id and len(live_chat_id) < 3:
                 return {"error": "O liveChatId parece incompleto.", **self.status()}
-            reference = self.extract_video_id(live_chat_id) or self.extract_channel_handle(live_chat_id)
+            video_id = self.extract_video_id(live_chat_id)
+            if not api_key:
+                if not video_id:
+                    return {"error": "No modo sem API, cole o link completo da live do YouTube. Um @canal ou somente o liveChatId precisa da API oficial.", **self.status()}
+                self.saved_settings[self.match_key()] = {"api_key": "", "live_chat_id": "", "live_url": live_chat_id, "video_id": video_id}
+                if self.settings_path:
+                    self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
+                await self.stop()
+                return self.status()
+            reference = video_id or self.extract_channel_handle(live_chat_id)
             if reference:
                 try:
                     live_chat_id, video_id = await self.resolve_chat_reference(api_key, live_chat_id)
                 except (httpx.HTTPError, ValueError) as exc:
                     return {"error": clean_text(exc, 240), **self.status()}
-            self.saved_settings[self.match_key()] = {"api_key": api_key, "live_chat_id": live_chat_id, "video_id": video_id}
+            self.saved_settings[self.match_key()] = {"api_key": api_key, "live_chat_id": live_chat_id, "live_url": "", "video_id": video_id}
             if self.settings_path:
                 self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
             await self.stop()
