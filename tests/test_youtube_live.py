@@ -36,7 +36,7 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.assertEqual(self.chat.extract_video_id(link), "ded3jykYQfA")
         self.assertEqual(self.chat.extract_video_id("ded3jykYQfA"), "ded3jykYQfA")
         self.assertNotEqual(self.chat.extract_video_id(link), "liveChatId")
-        self.assertEqual(self.chat.canonical_live_url("https://youtube.com/live/ded3jykYQfA?feature=share"), "https://www.youtube.com/live_chat?is_popout=1&v=ded3jykYQfA")
+        self.assertEqual(self.chat.canonical_live_url("https://youtube.com/live/ded3jykYQfA?feature=share"), "https://www.youtube.com/watch?v=ded3jykYQfA")
 
     def test_accepts_channel_handle_only(self):
         self.assertEqual(self.chat.extract_channel_handle("@PosJogoBR"), "PosJogoBR")
@@ -59,6 +59,9 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.chat.response_for("!vota Pedro", "Ana")
         self.chat.response_for("!vota Lucas", "Ana")
         self.assertEqual(self.chat.status()["votes"], [{"name": "Lucas", "votes": 1, "percentage": 100.0}])
+
+    def test_votar_is_accepted_as_vote_alias(self):
+        self.assertIn("Pedro", self.chat.response_for("!votar Pedro", "Ana"))
 
     def test_saved_studio_link_is_resolved_before_chat_request(self):
         self.chat.saved_settings[self.chat.match_key()] = {
