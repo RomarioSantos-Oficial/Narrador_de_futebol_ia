@@ -70,10 +70,17 @@ class YouTubeLiveChat:
             return value.strip(), ""
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get("https://www.googleapis.com/youtube/v3/videos", params={"part": "liveStreamingDetails", "id": video_id, "key": api_key})
-            if response.status_code == 400:
-                raise ValueError("A chave da API do YouTube foi rejeitada ou a API YouTube Data v3 não está ativada.")
-            if response.status_code in (401, 403):
-                raise ValueError("A chave não tem permissão para consultar a YouTube Data API v3.")
+            if response.status_code in (400, 401, 403):
+                try:
+                    reason = response.json().get("error", {}).get("errors", [{}])[0].get("reason", "")
+                except (AttributeError, IndexError, TypeError, ValueError):
+                    reason = ""
+                messages = {
+                    "keyInvalid": "A chave informada não é uma chave válida do Google. Ela normalmente começa com AIza.",
+                    "accessNotConfigured": "Ative a YouTube Data API v3 no mesmo projeto Google Cloud da chave.",
+                    "forbidden": "A chave foi bloqueada pelas restrições do Google Cloud ou não pode acessar a YouTube Data API v3.",
+                }
+                raise ValueError(messages.get(reason, "A chave da API do YouTube foi rejeitada. Confirme a chave, a API YouTube Data v3 e as restrições no Google Cloud."))
             response.raise_for_status()
             items = response.json().get("items", [])
             if not items:
