@@ -64,6 +64,15 @@ class YouTubeLiveChat:
         match = re.search(r"(?:[?&]v=|youtu\.be/|youtube\.com/(?:live/|embed/|watch\?v=))([A-Za-z0-9_-]{11})", text)
         return match.group(1) if match else ""
 
+    @staticmethod
+    def extract_channel_handle(value):
+        text = clean_text(value, 300).strip()
+        match = re.fullmatch(r"@([A-Za-z0-9._-]{3,100})", text)
+        if match:
+            return match.group(1)
+        match = re.search(r"youtube\.com/@([A-Za-z0-9._-]{3,100})", text)
+        return match.group(1) if match else ""
+
     async def resolve_live_chat_id(self, api_key, value):
         video_id = self.extract_video_id(value)
         if not video_id:
@@ -90,6 +99,41 @@ class YouTubeLiveChat:
             if not chat_id:
                 raise ValueError("Essa live não está ativa ou o chat ao vivo está desativado. Abra a transmissão ao vivo e tente novamente.")
             return chat_id, video_id
+
+    async def resolve_channel_live_chat(self, api_key, value):
+        handle = self.extract_channel_handle(value)
+        if not handle:
+            return value.strip(), ""
+        async with httpx.AsyncClient(timeout=20) as client:
+            channel_response = await client.get("https://www.googleapis.com/youtube/v3/channels", params={"part": "id", "forHandle": handle, "key": api_key})
+            if channel_response.status_code in (400, 401, 403):
+                raise ValueError("Não foi possível consultar o canal. Confirme a chave e se a YouTube Data API v3 está ativada.")
+            channel_response.raise_for_status()
+            channels = channel_response.json().get("items", [])
+            if not channels:
+                raise ValueError(f"O canal @{handle} não foi encontrado.")
+            channel_id = channels[0].get("id", "")
+            live_response = await client.get("https://www.googleapis.com/youtube/v3/search", params={"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "maxResults": 5, "key": api_key})
+            if live_response.status_code in (400, 401, 403):
+                raise ValueError("A chave não pode buscar lives do canal. Ative a YouTube Data API v3 e confira as restrições da chave.")
+            live_response.raise_for_status()
+            videos = [item.get("id", {}).get("videoId") for item in live_response.json().get("items", []) if item.get("id", {}).get("videoId")]
+            if not videos:
+                raise ValueError(f"Não encontrei uma live ativa no canal @{handle}.")
+            video_response = await client.get("https://www.googleapis.com/youtube/v3/videos", params={"part": "liveStreamingDetails", "id": ",".join(videos), "key": api_key})
+            video_response.raise_for_status()
+            for item in video_response.json().get("items", []):
+                chat_id = item.get("liveStreamingDetails", {}).get("activeLiveChatId")
+                if chat_id:
+                    return chat_id, item.get("id", "")
+            raise ValueError(f"A live ativa de @{handle} não está com o chat habilitado.")
+
+    async def resolve_chat_reference(self, api_key, value):
+        if self.extract_video_id(value):
+            return await self.resolve_live_chat_id(api_key, value)
+        if self.extract_channel_handle(value):
+            return await self.resolve_channel_live_chat(api_key, value)
+        return value.strip(), ""
 
     def roster(self):
         return self._player_names()
@@ -212,9 +256,8 @@ class YouTubeLiveChat:
     async def fetch_chat_messages(self):
         config = self.config()
         key, chat_id = config["api_key"], config["live_chat_id"]
-        video_id = self.extract_video_id(chat_id)
-        if video_id:
-            chat_id, video_id = await self.resolve_live_chat_id(key, chat_id)
+        if self.extract_video_id(chat_id) or self.extract_channel_handle(chat_id):
+            chat_id, video_id = await self.resolve_chat_reference(key, chat_id)
             self.saved_settings[self.match_key()] = {"api_key": key, "live_chat_id": chat_id, "video_id": video_id}
             if self.settings_path:
                 self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -295,10 +338,10 @@ class YouTubeLiveChat:
                 return {"error": "A chave do YouTube parece incompleta.", **self.status()}
             if live_chat_id and len(live_chat_id) < 3:
                 return {"error": "O liveChatId parece incompleto.", **self.status()}
-            video_id = self.extract_video_id(live_chat_id)
-            if video_id:
+            reference = self.extract_video_id(live_chat_id) or self.extract_channel_handle(live_chat_id)
+            if reference:
                 try:
-                    live_chat_id, video_id = await self.resolve_live_chat_id(api_key, live_chat_id)
+                    live_chat_id, video_id = await self.resolve_chat_reference(api_key, live_chat_id)
                 except (httpx.HTTPError, ValueError) as exc:
                     return {"error": clean_text(exc, 240), **self.status()}
             self.saved_settings[self.match_key()] = {"api_key": api_key, "live_chat_id": live_chat_id, "video_id": video_id}
