@@ -50,7 +50,16 @@ class YouTubeLiveChat:
 
     def config(self):
         saved = self.saved_settings.get(self.match_key(), {})
-        return {"api_key": str(saved.get("api_key") or os.getenv("YOUTUBE_API_KEY", "")).strip(), "live_chat_id": str(saved.get("live_chat_id") or os.getenv("YOUTUBE_LIVE_CHAT_ID", "")).strip(), "live_url": str(saved.get("live_url", "")).strip(), "video_id": str(saved.get("video_id", "")).strip()}
+        try:
+            monitor_interval = max(5, min(120, int(saved.get("monitor_interval", 30))))
+        except (TypeError, ValueError):
+            monitor_interval = 30
+        try:
+            command_cooldown = max(0, min(300, int(saved.get("command_cooldown", 30))))
+        except (TypeError, ValueError):
+            command_cooldown = 30
+        custom_commands = saved.get("custom_commands", {}) if isinstance(saved.get("custom_commands", {}), dict) else {}
+        return {"api_key": str(saved.get("api_key") or os.getenv("YOUTUBE_API_KEY", "")).strip(), "live_chat_id": str(saved.get("live_chat_id") or os.getenv("YOUTUBE_LIVE_CHAT_ID", "")).strip(), "live_url": str(saved.get("live_url", "")).strip(), "video_id": str(saved.get("video_id", "")).strip(), "monitor_interval": monitor_interval, "command_cooldown": command_cooldown, "custom_commands": custom_commands}
 
     def configured(self):
         current = self.config()
@@ -214,13 +223,16 @@ class YouTubeLiveChat:
         parts = raw[1:].split(maxsplit=1)
         command = parts[0].casefold() if parts else ""
         argument = parts[1] if len(parts) > 1 else ""
-        if command not in COMMANDS:
+        custom_commands = self.config().get("custom_commands", {})
+        if command not in COMMANDS and command not in custom_commands:
             return None
         now = time.monotonic()
-        if command != "vota" and now - self.last_user.get(author, 0) < 30:
+        if command != "vota" and now - self.last_user.get(author, 0) < self.config().get("command_cooldown", 30):
             return None
         if command != "vota":
             self.last_user[author] = now
+        if command in custom_commands:
+            return clean_text(str(custom_commands[command]).replace("{texto}", argument), 500)
         if command == "placar":
             h, a = self.state["home"], self.state["away"]
             return f"Placar: {h['name']} {h['score']}, {a['name']} {a['score']}. {self.state.get('status', '')}."
@@ -288,29 +300,35 @@ class YouTubeLiveChat:
         except ImportError:
             self.info.update(connected=False, error="Instale a dependência chat-downloader e reinicie o programa.")
             return
-        live_url = self.canonical_live_url(self.config()["live_url"])
+        config = self.config()
+        live_url = self.canonical_live_url(config["live_url"])
         try:
-            chat = await asyncio.to_thread(ChatDownloader().get_chat, live_url)
-            self.info.update(enabled=True, connected=True, error=None)
             while self.configured():
-                item = await asyncio.to_thread(self._next_unofficial, chat)
-                if not item:
-                    break
-                message_id = str(item.get("message_id", item.get("id", "")))
-                if message_id and message_id in self.seen:
-                    continue
-                if message_id:
-                    self.seen.add(message_id)
-                text = clean_text(item.get("message", item.get("message_text", "")))
-                author_data = item.get("author") or {}
-                author = clean_text(author_data.get("name", "espectador") if isinstance(author_data, dict) else author_data, 80)
-                self.track_mentions(text)
-                response = self.response_for(text, author)
-                self.info["messages"] += 1
-                if response:
-                    self.state["events"] = ([self.make_event(response, author)] + self.state.get("events", []))[:6]
-                self.state["youtube_chat"] = self.status()
-                await self.broadcast()
+                chat = await asyncio.to_thread(ChatDownloader().get_chat, live_url)
+                self.info.update(enabled=True, connected=True, error=None)
+                while self.configured():
+                    item = await asyncio.to_thread(self._next_unofficial, chat)
+                    if not item:
+                        self.info.update(connected=False, error="Lote de mensagens encerrado; reconectando ao chat…")
+                        self.state["youtube_chat"] = self.status()
+                        await self.broadcast()
+                        await asyncio.sleep(self.config()["monitor_interval"])
+                        break
+                    message_id = str(item.get("message_id", item.get("id", "")))
+                    if message_id and message_id in self.seen:
+                        continue
+                    if message_id:
+                        self.seen.add(message_id)
+                    text = clean_text(item.get("message", item.get("message_text", "")))
+                    author_data = item.get("author") or {}
+                    author = clean_text(author_data.get("name", "espectador") if isinstance(author_data, dict) else author_data, 80)
+                    self.track_mentions(text)
+                    response = self.response_for(text, author)
+                    self.info["messages"] += 1
+                    if response:
+                        self.state["events"] = ([self.make_event(response, author)] + self.state.get("events", []))[:6]
+                    self.state["youtube_chat"] = self.status()
+                    await self.broadcast()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -388,6 +406,21 @@ class YouTubeLiveChat:
         async def config(payload: dict):
             api_key = clean_text(payload.get("api_key"), 300)
             live_chat_id = clean_text(payload.get("live_chat_id"), 500)
+            try:
+                monitor_interval = max(5, min(120, int(payload.get("monitor_interval", 30))))
+            except (TypeError, ValueError):
+                monitor_interval = 30
+            try:
+                command_cooldown = max(0, min(300, int(payload.get("command_cooldown", 30))))
+            except (TypeError, ValueError):
+                command_cooldown = 30
+            custom_commands = {}
+            for line in str(payload.get("custom_commands", "") or "").splitlines():
+                if "=" in line:
+                    command, text = line.split("=", 1)
+                    command = command.strip().lstrip("!").casefold()
+                    if re.fullmatch(r"[a-z0-9_áéíóúãõç-]{2,30}", command) and text.strip():
+                        custom_commands[command] = clean_text(text, 500)
             if api_key and (not api_key.startswith("AIza") or len(api_key) < 30):
                 return {"error": "O valor informado não parece uma Google API Key. Crie uma chave em Google Cloud > APIs e serviços > Credenciais; ela normalmente começa com AIza.", **self.status()}
             if api_key and len(api_key) < 10:
@@ -398,7 +431,7 @@ class YouTubeLiveChat:
             if not api_key:
                 if not video_id:
                     return {"error": "No modo sem API, cole o link completo da live do YouTube. Um @canal ou somente o liveChatId precisa da API oficial.", **self.status()}
-                self.saved_settings[self.match_key()] = {"api_key": "", "live_chat_id": "", "live_url": live_chat_id, "video_id": video_id}
+                self.saved_settings[self.match_key()] = {"api_key": "", "live_chat_id": "", "live_url": live_chat_id, "video_id": video_id, "monitor_interval": monitor_interval, "command_cooldown": command_cooldown, "custom_commands": custom_commands}
                 if self.settings_path:
                     self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
                 await self.stop()
@@ -409,7 +442,7 @@ class YouTubeLiveChat:
                     live_chat_id, video_id = await self.resolve_chat_reference(api_key, live_chat_id)
                 except (httpx.HTTPError, ValueError) as exc:
                     return {"error": clean_text(exc, 240), **self.status()}
-            self.saved_settings[self.match_key()] = {"api_key": api_key, "live_chat_id": live_chat_id, "live_url": "", "video_id": video_id}
+            self.saved_settings[self.match_key()] = {"api_key": api_key, "live_chat_id": live_chat_id, "live_url": "", "video_id": video_id, "monitor_interval": monitor_interval, "command_cooldown": command_cooldown, "custom_commands": custom_commands}
             if self.settings_path:
                 self.settings_path.write_text(json.dumps(self.saved_settings, ensure_ascii=False, indent=2), encoding="utf-8")
             await self.stop()

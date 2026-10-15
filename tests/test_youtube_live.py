@@ -46,6 +46,10 @@ class YouTubeLiveChatTests(unittest.TestCase):
     def test_rejects_malformed_google_api_key(self):
         self.assertFalse("9b1r-t3y9-2mbw-gk3k-5dag".startswith("AIza"))
 
+    def test_custom_command_returns_operator_text(self):
+        self.chat.saved_settings[self.chat.match_key()] = {"custom_commands": {"saudacao": "Bem-vindos, {texto}!"}}
+        self.assertEqual(self.chat.response_for("!saudacao amigos", "Ana"), "Bem-vindos, amigos!")
+
     def test_vote_accepts_only_roster_and_returns_percentage(self):
         self.assertIn("Pedro", self.chat.response_for("!vota Pedro", "Ana"))
         self.assertIsNotNone(self.chat.response_for("!vota jogador-inexistente", "Bia"))
