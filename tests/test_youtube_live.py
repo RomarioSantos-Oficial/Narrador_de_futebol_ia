@@ -11,6 +11,7 @@ class YouTubeLiveChatTests(unittest.TestCase):
             "home": {"name": "Mandante", "score": 1},
             "away": {"name": "Visitante", "score": 0},
             "status": "AO VIVO", "minute": 42, "events": [],
+            "lineups": {"home": {"starters": [{"name": "Pedro"}], "bench": [{"name": "Lucas"}]}, "away": {"starters": [], "bench": []}},
         }
         self.chat = YouTubeLiveChat(self.state, lambda: None)
 
@@ -29,6 +30,16 @@ class YouTubeLiveChatTests(unittest.TestCase):
     def test_configuration_is_optional(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(self.chat.configured())
+
+    def test_vote_accepts_only_roster_and_returns_percentage(self):
+        self.assertIn("Pedro", self.chat.response_for("!vota Pedro", "Ana"))
+        self.assertIsNotNone(self.chat.response_for("!vota jogador-inexistente", "Bia"))
+        self.assertEqual(self.chat.status()["votes"][0]["percentage"], 100.0)
+
+    def test_same_user_can_change_player_vote(self):
+        self.chat.response_for("!vota Pedro", "Ana")
+        self.chat.response_for("!vota Lucas", "Ana")
+        self.assertEqual(self.chat.status()["votes"], [{"name": "Lucas", "votes": 1, "percentage": 100.0}])
 
 
 if __name__ == "__main__":

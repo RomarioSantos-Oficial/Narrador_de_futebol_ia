@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 
 
-COMMANDS = {"placar", "jogador", "pergunta", "narrar", "escalação", "escalacao"}
+COMMANDS = {"placar", "jogador", "pergunta", "narrar", "escalação", "escalacao", "vota", "enquete"}
 
 
 def clean_text(value: Any, limit: int = 240) -> str:
@@ -37,6 +37,10 @@ class YouTubeLiveChat:
         self.seen: set[str] = set()
         self.last_user: dict[str, float] = {}
         self.mentions: dict[str, dict[str, Any]] = {}
+        self.votes: dict[str, int] = {}
+        self.vote_users: dict[str, str] = {}
+        self.poll_users: dict[str, str] = {}
+        self.poll = {"question": "Quem foi o destaque da partida?", "options": [], "votes": {}}
         self.message_fingerprints: dict[str, float] = {}
         self.info = {"enabled": False, "connected": False, "messages": 0, "error": None}
         self.state["youtube_chat"] = dict(self.info)
@@ -52,8 +56,29 @@ class YouTubeLiveChat:
         current = self.config()
         return bool(current["api_key"] and current["live_chat_id"])
 
+    def roster(self):
+        return self._player_names()
+
+    def _find_player(self, value):
+        folded = clean_text(value, 80).casefold()
+        players = self.roster()
+        return (next((name for name in players if name.casefold() == folded), None)
+                or next((name for name in players if folded and folded in name.casefold()), None))
+
+    def votes_ranking(self):
+        total = sum(self.votes.values())
+        rows = [{"name": name, "votes": count, "percentage": round(count * 100 / total, 1) if total else 0}
+                for name, count in self.votes.items() if count and name in self.roster()]
+        return sorted(rows, key=lambda item: (-item["votes"], item["name"].casefold()))[:3]
+
+    def poll_status(self):
+        total = sum(self.poll.get("votes", {}).values())
+        return {"question": self.poll.get("question", ""), "options": [
+            {"name": name, "votes": count, "percentage": round(count * 100 / total, 1) if total else 0}
+            for name, count in self.poll.get("votes", {}).items()]}
+
     def status(self):
-        return {**self.info, "configured": self.configured(), "chat_id": bool(os.getenv("YOUTUBE_LIVE_CHAT_ID", "").strip()), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}}
+        return {**self.info, "configured": self.configured(), "chat_id": bool(os.getenv("YOUTUBE_LIVE_CHAT_ID", "").strip()), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}, "votes": self.votes_ranking(), "vote_total": sum(self.votes.values()), "poll": self.poll_status()}
 
     def _player_names(self):
         names = []
@@ -68,7 +93,8 @@ class YouTubeLiveChat:
         now = time.time()
         folded = text.casefold()
         for name in self._player_names():
-            if name.casefold() not in folded:
+            aliases = [name.casefold()] + [part for part in re.findall(r"[\wÀ-ÿ]+", name.casefold()) if len(part) >= 3]
+            if not any(re.search(r"(?<![\wÀ-ÿ])" + re.escape(alias) + r"(?![\wÀ-ÿ])", folded) for alias in aliases):
                 continue
             entry = self.mentions.setdefault(name, {"name": name, "count": 0, "times": deque()})
             if entry["times"] and now - entry["times"][-1] < 2:
@@ -106,9 +132,10 @@ class YouTubeLiveChat:
         if command not in COMMANDS:
             return None
         now = time.monotonic()
-        if now - self.last_user.get(author, 0) < 30:
+        if command != "vota" and now - self.last_user.get(author, 0) < 30:
             return None
-        self.last_user[author] = now
+        if command != "vota":
+            self.last_user[author] = now
         if command == "placar":
             h, a = self.state["home"], self.state["away"]
             return f"Placar: {h['name']} {h['score']}, {a['name']} {a['score']}. {self.state.get('status', '')}."
@@ -117,6 +144,30 @@ class YouTubeLiveChat:
         if command == "jogador":
             top = ", ".join(f"{item['name']} ({item['count']} menções)" for item in self.top_players()) or "ainda não há menções suficientes"
             return f"Os três jogadores mais comentados são: {top}. Pedido recebido sobre {argument or 'o jogador'}; vou usar apenas dados confirmados."
+        if command == "vota":
+            poll_option = next((option for option in self.poll.get("options", []) if option.casefold() == argument.casefold()), None)
+            if poll_option:
+                previous = self.poll_users.get(author)
+                if previous == poll_option:
+                    return f"Seu voto em {poll_option} já foi registrado."
+                if previous:
+                    self.poll["votes"][previous] = max(0, self.poll["votes"].get(previous, 1) - 1)
+                self.poll_users[author] = poll_option
+                self.poll["votes"][poll_option] = self.poll["votes"].get(poll_option, 0) + 1
+                return f"Voto registrado na enquete para {poll_option}."
+            player = self._find_player(argument)
+            if not player:
+                return "Votação ignorada: informe um titular ou reserva confirmado nesta partida."
+            previous = self.vote_users.get(author)
+            if previous == player:
+                return f"Seu voto em {player} já foi registrado."
+            if previous:
+                self.votes[previous] = max(0, self.votes.get(previous, 1) - 1)
+            self.vote_users[author] = player
+            self.votes[player] = self.votes.get(player, 0) + 1
+            return f"Voto registrado para {player}."
+        if command == "enquete":
+            return "A enquete oficial da partida está disponível no painel da transmissão."
         if command == "pergunta":
             return f"Pergunta recebida: {argument or 'sem texto'}. A resposta será baseada nos dados disponíveis da partida."
         if command == "narrar":
@@ -212,6 +263,37 @@ class YouTubeLiveChat:
         @app.get("/api/youtube/top-players")
         async def top_players():
             return {"players": self.top_players()}
+
+        @app.post("/api/youtube/reset-votes")
+        async def reset_votes():
+            self.votes.clear()
+            self.vote_users.clear()
+            self.state["youtube_chat"] = self.status()
+            await self.broadcast()
+            return self.status()
+
+        @app.post("/api/youtube/poll")
+        async def create_poll(payload: dict):
+            question = clean_text(payload.get("question"), 160)
+            options = []
+            for value in payload.get("options", []):
+                option = clean_text(value, 80)
+                if option and option.casefold() not in {item.casefold() for item in options}:
+                    options.append(option)
+            if not question or len(options) < 2 or len(options) > 6:
+                return {"error": "Informe uma pergunta e de 2 a 6 opções.", **self.status()}
+            self.poll = {"question": question, "options": options, "votes": {option: 0 for option in options}}
+            self.state["youtube_chat"] = self.status()
+            await self.broadcast()
+            return self.status()
+
+        @app.post("/api/youtube/reset-poll")
+        async def reset_poll():
+            self.poll = {"question": "Quem foi o destaque da partida?", "options": [], "votes": {}}
+            self.poll_users.clear()
+            self.state["youtube_chat"] = self.status()
+            await self.broadcast()
+            return self.status()
 
         @app.post("/api/youtube/start")
         async def start():
