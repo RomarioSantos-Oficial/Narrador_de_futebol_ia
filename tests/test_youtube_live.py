@@ -31,6 +31,12 @@ class YouTubeLiveChatTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(self.chat.configured())
 
+    def test_accepts_studio_link_and_extracts_video_id(self):
+        link = "https://studio.youtube.com/live_chat?is_popout=1&v=ded3jykYQfA"
+        self.assertEqual(self.chat.extract_video_id(link), "ded3jykYQfA")
+        self.assertEqual(self.chat.extract_video_id("ded3jykYQfA"), "ded3jykYQfA")
+        self.assertNotEqual(self.chat.extract_video_id(link), "liveChatId")
+
     def test_vote_accepts_only_roster_and_returns_percentage(self):
         self.assertIn("Pedro", self.chat.response_for("!vota Pedro", "Ana"))
         self.assertIsNotNone(self.chat.response_for("!vota jogador-inexistente", "Bia"))
