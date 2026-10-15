@@ -1,4 +1,4 @@
-const sceneByPath={'/partida':'match','/em-campo':'lineups','/em_campo':'lineups','/reservas':'bench','/tabela':'table','/formacao':'formation','/formação':'formation'};
+const sceneByPath={'/partida':'match','/em-campo':'lineups','/em_campo':'lineups','/reservas':'bench','/tabela':'table','/formacao':'formation','/formação':'formation','/mais-comentados':'chat','/chat':'chat'};
 const fixedScene=sceneByPath[location.pathname]||'';
 function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform=`scale(${scale})`;$('stage').style.left=(innerWidth-1920*scale)/2+'px';$('stage').style.top=(innerHeight-1080*scale)/2+'px'}
 addEventListener('resize',resize);resize();
@@ -13,7 +13,7 @@ function appearance(a={}){
  if(!logoUrl)channelLogo.hidden=true;
  $('stage').classList.toggle('compact',a.layout==='compact');$('stage').classList.toggle('no-logos',a.show_logos===false);
  $('statsPanel').hidden=a.show_stats===false;$('eventsPanel').hidden=a.show_events===false;$('matchLineups').hidden=a.show_lineups===false;$('pitchPanel').hidden=!a.show_pitch;$('contextBand').hidden=a.show_context===false||a.scene!=='match';$('stage').classList.toggle('with-pitch',!!a.show_pitch);
- $('matchPanels').hidden=['lineups','bench','table','formation'].includes(a.scene);$('lineupsPanel').hidden=!['lineups','bench'].includes(a.scene);$('lineupGroup').textContent=a.scene==='bench'?'Reservas':'Em campo';$('tablePanel').hidden=a.scene!=='table';
+ $('matchPanels').hidden=['lineups','bench','table','formation','chat'].includes(a.scene);$('lineupsPanel').hidden=!['lineups','bench'].includes(a.scene);$('lineupGroup').textContent=a.scene==='bench'?'Reservas':'Em campo';$('tablePanel').hidden=a.scene!=='table';$('chatPanel').hidden=a.scene!=='chat';$('stage').classList.toggle('chat-scene',a.scene==='chat');
  const bg=$('backdrop');bg.style.backgroundImage='none';bg.style.backgroundColor='transparent';$('shade').style.background='transparent';
  if(a.background==='solid')bg.style.backgroundColor=a.background_color;
  if(a.background==='gradient'){bg.style.backgroundColor=a.background_color;bg.style.backgroundImage=`radial-gradient(ellipse at 20% 20%, ${a.accent}25, transparent 55%),radial-gradient(ellipse at 90% 80%, ${a.away_accent}20, transparent 60%),linear-gradient(135deg,transparent,#0006)`}
@@ -82,7 +82,9 @@ function render(s){
  updateLineupReadAnimation(s);
  $('contextBand').innerHTML=['home','away'].map(side=>{const t=s.standings?.[side],history=s.recent_form?.[side]||[];return `<div class="context-team"><strong>${esc(s[side].name)}</strong><span class="context-rank">${t?.rank?esc(t.rank)+'º · '+esc(t.points??'—')+' pts':'Classificação indisponível'}</span><span class="form-label">ÚLTIMOS 5</span><div class="form-badges">${history.length?formBadges(history):'<small>Não informados</small>'}</div></div>`}).join('')+'<div class="context-caption">V vitória · E empate · D derrota · mais recente primeiro · últimos jogos em todas as competições · classificação informada pela fonte</div>';
  $('bookings').innerHTML=(s.cards||[]).length?'<span class="eyebrow">CARTÕES NA PARTIDA</span><div class="booking-list">'+s.cards.slice(-4).reverse().map(c=>`<div><span class="card-icon ${c.color==='red'?'red':''}"></span> ${esc(c.player)} <small>${esc(c.minute)}′ · ${esc(c.team)}</small></div>`).join('')+'</div>':'';
- const top=s.youtube_chat?.top_players_by_window?.['15']||s.youtube_chat?.top_players||[];$('chatRanking').hidden=!top.length;$('chatRankingItems').innerHTML=top.map((item,index)=>`<div class="chat-rank-item"><span>${index+1}º</span><strong>${esc(item.name)}</strong><small>${item.count} menção(ões)</small></div>`).join('');
+ const top=s.youtube_chat?.top_players_by_window?.['15']||s.youtube_chat?.top_players||[];$('chatRanking').hidden=!top.length;$('chatInlineRankingItems').innerHTML=top.map((item,index)=>`<div class="chat-rank-item"><span>${index+1}º</span><strong>${esc(item.name)}</strong><small>${item.count} menção(ões)</small></div>`).join('');
+ const votes=s.youtube_chat?.votes||[];$('chatVoteItems').innerHTML=votes.length?votes.map((item,index)=>`<div class="chat-rank-item"><span>${index+1}º</span><strong>${esc(item.name)}</strong><small>${item.percentage}% · ${item.votes} voto(s)</small></div>`).join(''):'<p class="empty">Aguardando votos.</p>';
+ $('chatPollQuestion').textContent=s.youtube_chat?.poll?.question||'';$('chatPollItems').innerHTML=(s.youtube_chat?.poll?.options||[]).map(item=>`<div class="chat-rank-item"><strong>${esc(item.name)}</strong><small>${item.percentage}% · ${item.votes} voto(s)</small></div>`).join('');
 }
 fetch('/api/state').then(r=>r.json()).then(render).catch(()=>{});
 function connect(){const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);ws.onmessage=e=>render(JSON.parse(e.data));ws.onclose=()=>{if(typeof matchAnimation!=='undefined'){matchAnimation.baseline=true;matchAnimation.reset()}setTimeout(connect,3000)}}connect();

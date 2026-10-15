@@ -186,6 +186,8 @@ async def overlay():
 @app.get("/tabela")
 @app.get("/formacao")
 @app.get("/formação")
+@app.get("/mais-comentados")
+@app.get("/chat")
 async def overlay_scene():
     """Dedicated OBS browser sources; the client fixes the requested scene by URL."""
     return FileResponse(BASE / "static" / "overlay.html", headers={'Cache-Control': 'no-cache'})

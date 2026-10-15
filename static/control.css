@@ -15,3 +15,5 @@
 
 .top-players{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.top-player{border:1px solid #2a384c;background:#0e1621;border-radius:8px;padding:12px}.top-player strong{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.top-player small{display:block;color:var(--accent);margin-top:6px;font-size:10px}
 .news-article{border-top:1px solid var(--border);padding:10px 0}.news-article a{font-size:11px;color:#c8d6e8}.news-article small{display:block;color:#7e8ea5;font-size:9px;margin-top:4px}
+
+.chat-admin-note{color:var(--muted);font-size:11px}.obs-scene-link{margin-top:10px}
