@@ -179,6 +179,17 @@ async def control():
 async def overlay():
     return FileResponse(BASE / "static" / "overlay.html", headers={'Cache-Control': 'no-cache'})
 
+@app.get("/partida")
+@app.get("/em-campo")
+@app.get("/em_campo")
+@app.get("/reservas")
+@app.get("/tabela")
+@app.get("/formacao")
+@app.get("/formação")
+async def overlay_scene():
+    """Dedicated OBS browser sources; the client fixes the requested scene by URL."""
+    return FileResponse(BASE / "static" / "overlay.html", headers={'Cache-Control': 'no-cache'})
+
 @app.get("/audio")
 async def audio_channel():
     return FileResponse(BASE / "static" / "audio.html", headers={'Cache-Control': 'no-cache'})

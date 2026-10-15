@@ -69,6 +69,10 @@ class NewsContext:
     def status(self):
         return self.state.get('news_context', self._empty_status())
 
+    def configured(self):
+        """RSS gratuito não depende de chave; a disponibilidade da consulta é separada do status."""
+        return True
+
     @staticmethod
     def clean(value, limit=500):
         return re.sub(r'\s+', ' ', str(value or '')).strip()[:limit]
@@ -76,7 +80,7 @@ class NewsContext:
     @classmethod
     def trust_label(cls, url):
         host = (urlparse(url).hostname or '').removeprefix('www.').casefold()
-        return 'alta' if any(host == domain or host.endswith('.' + domain) for domain in cls.TRUSTED_DOMAINS) else 'nÃ£o verificada'
+        return 'alta' if any(host == domain or host.endswith('.' + domain) for domain in cls.TRUSTED_DOMAINS) else 'não verificada'
 
     def _teams(self):
         return [self.clean(self.state.get(side, {}).get('name'), 100) for side in ('home', 'away')]

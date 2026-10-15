@@ -7,7 +7,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
-from backend.local_brain import BrainRequest, LocalBrain, assemble
+from backend.local_brain import BrainRequest, BrainSettingsRequest, LocalBrain, assemble
 from backend.narration_channel import NarrationSettings
 
 
@@ -50,7 +50,7 @@ class BrainTests(unittest.TestCase):
             brain.install(app)
             with TestClient(app) as client:
                 self.assertFalse(client.get('/api/brain/status').json()['installed'])
-                self.assertEqual(client.post('/api/brain/start').status_code, 503)
+                self.assertEqual(client.post('/api/brain/start').status_code, 400)
                 fallback = client.post('/api/brain/compose', json={'text': 'Placar, 0 a 0.'}).json()
                 self.assertEqual(fallback['text'], 'Placar, 0 a 0.')
                 self.assertEqual(fallback['source'], 'facts')
@@ -72,29 +72,18 @@ class BrainAsyncTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['text'], payload.text)
                 self.assertFalse(brain.compose_lock.locked())
 
-    async def test_shutdown_only_stops_owned_process(self):
-        from unittest.mock import Mock
+    async def test_stop_clears_api_ready_state(self):
         with tempfile.TemporaryDirectory() as folder:
             brain = LocalBrain(Path(folder))
-            child = Mock()
-            child.poll.return_value = None
-            brain.process = child
+            brain.ready = True
             await brain.stop()
-            child.terminate.assert_called_once()
-            child.wait.assert_called_once_with(timeout=8)
-            await brain.stop()
-            self.assertEqual(child.terminate.call_count, 1)
+            self.assertFalse(brain.ready)
 
-    def test_cpu_runtime_is_detected_when_vulkan_is_absent(self):
+    def test_api_configuration_is_persisted_without_exposing_key(self):
         with tempfile.TemporaryDirectory() as folder:
-            base = Path(folder)
-            model_dir = base / 'models' / 'brain'
-            model_dir.mkdir(parents=True)
-            (model_dir / 'Qwen3-4B-Q4_K_M.gguf').write_bytes(b'fake-model')
-            runtime_dir = model_dir / 'runtime' / 'llama-b10410-bin-win-cpu-x64'
-            runtime_dir.mkdir(parents=True)
-            (runtime_dir / 'llama-server.exe').write_bytes(b'fake-exe')
-            brain = LocalBrain(base)
-            self.assertTrue(brain.model.is_file())
-            self.assertTrue(brain.executable.is_file())
-            self.assertEqual(brain.executable.name, 'llama-server.exe')
+            brain = LocalBrain(Path(folder))
+            payload = BrainSettingsRequest(connection='local', base_url='http://127.0.0.1:1234/v1', model='qwen-local')
+            result = brain.save_settings(payload)
+            self.assertTrue(result['configured'])
+            self.assertFalse(result['has_api_key'])
+            self.assertNotIn('api_key', result)

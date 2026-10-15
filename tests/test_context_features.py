@@ -26,7 +26,7 @@ class ContextFeatureTests(unittest.TestCase):
     def test_news_is_optional_without_key(self):
         context = NewsContext(self.state)
         with patch.dict(os.environ, {}, clear=True):
-            self.assertFalse(context.configured())
+            self.assertTrue(context.configured())
 
     def test_news_trust_uses_official_or_recognized_domains(self):
         self.assertEqual(NewsContext.trust_label("https://ge.globo.com/futebol/noticia"), "alta")

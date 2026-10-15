@@ -1,3 +1,5 @@
+const sceneByPath={'/partida':'match','/em-campo':'lineups','/em_campo':'lineups','/reservas':'bench','/tabela':'table','/formacao':'formation','/formação':'formation'};
+const fixedScene=sceneByPath[location.pathname]||'';
 function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform=`scale(${scale})`;$('stage').style.left=(innerWidth-1920*scale)/2+'px';$('stage').style.top=(innerHeight-1080*scale)/2+'px'}
 addEventListener('resize',resize);resize();
 function logo(side,url,name){const img=$(side+'Logo'),fallback=$(side+'Fallback');fallback.textContent=name;img.alt='Escudo '+name;if(img.dataset.url===url)return;img.dataset.url=url||'';img.hidden=true;fallback.hidden=false;if(url){img.onload=()=>{img.hidden=false;fallback.hidden=true};img.onerror=()=>{img.hidden=true;fallback.hidden=false};img.src=url}else img.removeAttribute('src')}
@@ -47,10 +49,12 @@ function updateLineupReadAnimation(s){
  }
  const queued=(playback.queue||[]).some(isLineup),reading=isLineup(current);
  if(!reading&&!queued)lineupReadProgress=null;
+ const scene=fixedScene||s.appearance?.scene||'match';
+ if(scene!=='formation'){lineupReadProgress=null;layer.hidden=true;layer.replaceChildren();layer.dataset.progress='';layer.classList.remove('lineup-read-scene');$('stage').classList.remove('lineup-reading');return;}
  if(!lineupReadProgress){layer.hidden=true;layer.replaceChildren();layer.dataset.progress='';layer.classList.remove('lineup-read-scene');$('stage').classList.remove('lineup-reading');return;}
  $('stage').classList.add('lineup-reading');
  layer.hidden=false;
- const scene=s.appearance?.scene||'match',signature=JSON.stringify([lineupReadProgress,scene]);
+ const signature=JSON.stringify([lineupReadProgress,scene]);
  if(layer.dataset.progress===signature)return;
  layer.dataset.progress=signature;
  if(scene==='formation'){
@@ -63,7 +67,7 @@ function updateLineupReadAnimation(s){
 function render(s){
  s=pregameState(s);
  updateLeagueTable(s);
- const a=s.appearance||{};appearance(a);$('formationPanel').hidden=a.scene!=='formation';$('formationBenchPanel').hidden=a.scene!=='formation';$('stage').classList.toggle('formation-scene',a.scene==='formation');if(a.scene==='formation')renderFormation(s);
+ const a={...(s.appearance||{}),...(fixedScene?{scene:fixedScene}:{})};s={...s,appearance:a};appearance(a);$('formationPanel').hidden=a.scene!=='formation';$('formationBenchPanel').hidden=a.scene!=='formation';$('stage').classList.toggle('formation-scene',a.scene==='formation');if(a.scene==='formation')renderFormation(s);
  $('competition').textContent=s.competition;$('homeName').textContent=s.home.name;$('awayName').textContent=s.away.name;$('homeScore').textContent=s.home.score;$('awayScore').textContent=s.away.score;
  $('clock').textContent=s.clock_display??`${s.minute}′`;$('matchStatus').textContent=s.status;$('venue').textContent=s.venue||'';
  $('matchBadge').textContent=s.phase==='in'?'AO VIVO':s.phase==='post'?'ENCERRADO':s.phase==='manual'?'MANUAL':'PRÉ-JOGO';$('matchBadge').classList.toggle('live',s.phase==='in');

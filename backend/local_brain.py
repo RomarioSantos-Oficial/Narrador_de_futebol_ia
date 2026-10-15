@@ -289,7 +289,7 @@ class LocalBrain:
                                      'source': {'name': article.get('source', 'Fonte não informada'),
                                                 'url': article.get('url', '')}})
         if not segments:
-            raise HTTPException(502, 'The LLM did not find suitable headlines to narrate.')
+            raise HTTPException(502, 'A LLM não encontrou manchetes adequadas para narrar.')
         return segments
 
     async def start(self):
