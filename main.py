@@ -160,6 +160,7 @@ coach_overrides = CoachOverrides(BASE, state, broadcast)
 coach_overrides.install(app)
 youtube_chat = YouTubeLiveChat(state, broadcast, BASE)
 youtube_chat.install(app)
+free_feed.after_select = youtube_chat.match_selected
 news_context = NewsContext(state, broadcast, BASE, local_brain)
 news_context.install(app)
 

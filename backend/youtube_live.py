@@ -39,6 +39,8 @@ class YouTubeLiveChat:
         self.mentions: dict[str, dict[str, Any]] = {}
         self.votes: dict[str, int] = {}
         self.vote_users: dict[str, str] = {}
+        self.chat_history: deque[tuple[float, str]] = deque(maxlen=5000)
+        self.roster_signature = ()
         self.poll_users: dict[str, str] = {}
         self.poll = {"question": "Quem foi o destaque da partida?", "options": [], "votes": {}}
         self.message_fingerprints: dict[str, float] = {}
@@ -154,17 +156,50 @@ class YouTubeLiveChat:
     def roster(self):
         return self._player_names()
 
+    def _player_entries(self):
+        entries = []
+        for side in ("home", "away"):
+            lineup = self.state.get("lineups", {}).get(side) or {}
+            for player in (lineup.get("starters", []) or []) + (lineup.get("bench", []) or []):
+                name = clean_text(player.get("name", ""), 80)
+                if len(name) >= 3:
+                    entries.append({"name": name, "side": side, "team": self.state.get(side, {}).get("name", ""), "player": player})
+        return entries
+
+    def _roster_key(self):
+        return tuple((item["side"], item["name"], str(item["player"].get("id", ""))) for item in self._player_entries())
+
+    def _player_entry(self, name):
+        folded = clean_text(name, 80).casefold()
+        entries = self._player_entries()
+        return (next((item for item in entries if item["name"].casefold() == folded), None)
+                or next((item for item in entries if folded and folded in item["name"].casefold()), None))
+
+    @staticmethod
+    def _entry_row(item, count, total=0):
+        player = item["player"]
+        return {"name": item["name"], "side": item["side"], "team": item["team"],
+                "photo": clean_text(player.get("photo", ""), 1000), "count": count,
+                "votes": count, "percentage": round(count * 100 / total, 1) if total else 0}
+
     def _find_player(self, value):
-        folded = clean_text(value, 80).casefold()
-        players = self.roster()
-        return (next((name for name in players if name.casefold() == folded), None)
-                or next((name for name in players if folded and folded in name.casefold()), None))
+        item = self._player_entry(value)
+        return item["name"] if item else None
 
     def votes_ranking(self):
         total = sum(self.votes.values())
-        rows = [{"name": name, "votes": count, "percentage": round(count * 100 / total, 1) if total else 0}
-                for name, count in self.votes.items() if count and name in self.roster()]
+        rows = [self._entry_row(item, self.votes.get(item["name"], 0), total)
+                for item in self._player_entries() if self.votes.get(item["name"], 0)]
         return sorted(rows, key=lambda item: (-item["votes"], item["name"].casefold()))[:3]
+
+    def votes_by_team(self):
+        total = sum(self.votes.get(item["name"], 0) for item in self._player_entries())
+        result = {}
+        for side in ("home", "away"):
+            rows = [self._entry_row(item, self.votes.get(item["name"], 0), total)
+                    for item in self._player_entries() if item["side"] == side and self.votes.get(item["name"], 0)]
+            result[side] = sorted(rows, key=lambda item: (-item["votes"], item["name"].casefold()))[:3]
+        return result
 
     def poll_status(self):
         total = sum(self.poll.get("votes", {}).values())
@@ -174,29 +209,35 @@ class YouTubeLiveChat:
 
     def status(self):
         config = self.config()
-        return {**self.info, "configured": self.configured(), "mode": "sem_api" if config["live_url"] and not config["api_key"] else "api", "chat_id": bool(config["live_chat_id"]), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}, "votes": self.votes_ranking(), "vote_total": sum(self.votes.values()), "poll": self.poll_status()}
+        return {**self.info, "configured": self.configured(), "mode": "sem_api" if config["live_url"] and not config["api_key"] else "api", "chat_id": bool(config["live_chat_id"]), "top_players": self.top_players(), "top_players_by_window": {str(window): self.top_players(window) for window in (5, 15, 30)}, "votes": self.votes_ranking(), "votes_by_team": self.votes_by_team(), "vote_total": sum(self.votes.values()), "poll": self.poll_status()}
 
     def _player_names(self):
-        names = []
-        for lineup in (self.state.get("lineups") or {}).values():
-            for player in (lineup or {}).get("starters", []) + (lineup or {}).get("bench", []):
-                name = clean_text(player.get("name", ""), 80)
-                if len(name) >= 3:
-                    names.append(name)
-        return names
+        return [item["name"] for item in self._player_entries()]
 
-    def track_mentions(self, text: str):
-        now = time.time()
+    def _record_mentions(self, text, stamp, deduplicate=True):
         folded = text.casefold()
-        for name in self._player_names():
+        for item in self._player_entries():
+            name = item["name"]
             aliases = [name.casefold()] + [part for part in re.findall(r"[\wÀ-ÿ]+", name.casefold()) if len(part) >= 3]
             if not any(re.search(r"(?<![\wÀ-ÿ])" + re.escape(alias) + r"(?![\wÀ-ÿ])", folded) for alias in aliases):
                 continue
-            entry = self.mentions.setdefault(name, {"name": name, "count": 0, "times": deque()})
-            if entry["times"] and now - entry["times"][-1] < 2:
+            entry = self.mentions.setdefault(name, {"name": name, "side": item["side"], "team": item["team"], "photo": clean_text(item["player"].get("photo", ""), 1000), "count": 0, "times": deque()})
+            if deduplicate and entry["times"] and stamp - entry["times"][-1] < 2:
                 continue
-            entry["times"].append(now)
+            entry["times"].append(stamp)
             entry["count"] += 1
+
+    def track_mentions(self, text: str):
+        now = time.time()
+        self.chat_history.append((now, text))
+        signature = self._roster_key()
+        if signature != self.roster_signature:
+            self.mentions.clear()
+            self.roster_signature = signature
+            for stamp, message in self.chat_history:
+                self._record_mentions(message, stamp, deduplicate=False)
+        else:
+            self._record_mentions(text, now)
 
     def top_players(self, window_minutes=0):
         now = time.time()
@@ -207,7 +248,7 @@ class YouTubeLiveChat:
                     entry["times"].popleft()
             count = len(entry["times"]) if window_minutes else entry["count"]
             if count:
-                result.append({"name": entry["name"], "count": count})
+                result.append({"name": entry["name"], "side": entry.get("side", ""), "team": entry.get("team", ""), "photo": entry.get("photo", ""), "count": count})
         return sorted(result, key=lambda item: (-item["count"], item["name"].casefold()))[:3]
 
     def make_event(self, text: str, author: str, kind: str = "event"):
@@ -304,8 +345,8 @@ class YouTubeLiveChat:
             return
         config = self.config()
         live_url = self.canonical_live_url(config["live_url"])
-        try:
-            while self.configured():
+        while self.configured():
+            try:
                 chat = await asyncio.to_thread(ChatDownloader().get_chat, live_url)
                 self.info.update(enabled=True, connected=True, error=None)
                 while self.configured():
@@ -331,12 +372,13 @@ class YouTubeLiveChat:
                         self.state["events"] = ([self.make_event(response, author)] + self.state.get("events", []))[:6]
                     self.state["youtube_chat"] = self.status()
                     await self.broadcast()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self.info.update(connected=False, error=clean_text(exc, 240))
-            self.state["youtube_chat"] = self.status()
-            await self.broadcast()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.info.update(enabled=True, connected=False, error=clean_text(exc, 240))
+                self.state["youtube_chat"] = self.status()
+                await self.broadcast()
+                await asyncio.sleep(self.config()["monitor_interval"])
 
     async def loop(self):
         if self.config().get("live_url") and not self.config().get("api_key"):
@@ -387,6 +429,18 @@ class YouTubeLiveChat:
             return self.status()
         self.task = asyncio.create_task(self.loop())
         return self.status()
+
+    async def match_selected(self):
+        await self.stop()
+        self.seen.clear()
+        self.next_page = ""
+        self.mentions.clear()
+        self.chat_history.clear()
+        self.roster_signature = ()
+        self.votes.clear()
+        self.vote_users.clear()
+        self.state["youtube_chat"] = self.status()
+        return await self.start()
 
     async def stop(self):
         if self.task:
