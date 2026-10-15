@@ -75,16 +75,16 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.assertEqual(self.chat.top_players()[0]["name"], "Pedro Silva")
         self.assertEqual(self.chat.top_players()[0]["count"], 1)
 
-    def test_votes_are_split_by_team_and_keep_photo_and_percentage(self):
+    def test_votes_rank_global_top_three_and_keep_photo_and_percentage(self):
         self.state["lineups"]["away"]["starters"] = [{"name": "João Costa", "photo": "https://example.com/joao.jpg"}]
         self.chat.response_for("!votar Pedro", "Ana")
         self.chat.response_for("!votar João", "Bia")
         self.chat.response_for("!votar João Costa", "Carlos")
-        by_team = self.chat.status()["votes_by_team"]
-        self.assertEqual(by_team["home"][0]["name"], "Pedro")
-        self.assertEqual(by_team["away"][0]["name"], "João Costa")
-        self.assertEqual(by_team["away"][0]["photo"], "https://example.com/joao.jpg")
-        self.assertEqual(by_team["away"][0]["percentage"], 66.7)
+        self.chat.response_for("!votar Lucas", "Diego")
+        rows = self.chat.status()["votes"]
+        self.assertEqual([row["name"] for row in rows], ["João Costa", "Lucas", "Pedro"])
+        self.assertEqual(rows[0]["photo"], "https://example.com/joao.jpg")
+        self.assertEqual(rows[0]["percentage"], 50.0)
 
     def test_saved_studio_link_is_resolved_before_chat_request(self):
         self.chat.saved_settings[self.chat.match_key()] = {
