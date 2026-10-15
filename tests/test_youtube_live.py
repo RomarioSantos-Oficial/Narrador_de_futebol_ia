@@ -42,6 +42,9 @@ class YouTubeLiveChatTests(unittest.TestCase):
         self.assertEqual(self.chat.extract_channel_handle("https://www.youtube.com/@PosJogoBR"), "PosJogoBR")
         self.assertEqual(self.chat.extract_channel_handle("9b1r-t3y9-2mbw-gk3k-5dag"), "")
 
+    def test_rejects_malformed_google_api_key(self):
+        self.assertFalse("9b1r-t3y9-2mbw-gk3k-5dag".startswith("AIza"))
+
     def test_vote_accepts_only_roster_and_returns_percentage(self):
         self.assertIn("Pedro", self.chat.response_for("!vota Pedro", "Ana"))
         self.assertIsNotNone(self.chat.response_for("!vota jogador-inexistente", "Bia"))

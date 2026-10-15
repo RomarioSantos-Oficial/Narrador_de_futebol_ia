@@ -334,6 +334,8 @@ class YouTubeLiveChat:
         async def config(payload: dict):
             api_key = clean_text(payload.get("api_key"), 300)
             live_chat_id = clean_text(payload.get("live_chat_id"), 500)
+            if api_key and (not api_key.startswith("AIza") or len(api_key) < 30):
+                return {"error": "O valor informado não parece uma Google API Key. Crie uma chave em Google Cloud > APIs e serviços > Credenciais; ela normalmente começa com AIza.", **self.status()}
             if api_key and len(api_key) < 10:
                 return {"error": "A chave do YouTube parece incompleta.", **self.status()}
             if live_chat_id and len(live_chat_id) < 3:
